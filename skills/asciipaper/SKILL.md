@@ -22,14 +22,14 @@ Write one `.html` file that:
 
 1. Fills the viewport: `html,body{margin:0;height:100%;overflow:hidden;background:#080909}` and a `<canvas>` (or monospace `<pre>`) sized to `innerWidth × innerHeight`, re-sized on `resize`.
 2. Animates with `requestAnimationFrame` (cap at ~30 fps to save CPU) or `setInterval`.
-3. Draws characters with `ctx.fillText` in a monospace font — that's what makes it ASCII. Batch by colour: set `fillStyle` once per colour, not per glyph.
+3. Draws characters in a monospace font — that's what makes it ASCII. `ctx.fillText` is fine up to a few thousand glyphs; beyond that copy the WebGL glyph-atlas approach in `fluid.html`.
 4. Reacts to `pointermove` / `pointerdown` / `wheel` — they fire when the cursor is over the bare desktop. Keyboard never arrives (by design).
 5. Uses only inline JS or `import … from './lib/asciify-core.js'` (the MIT asciify-engine core, available to every wallpaper in `wallpapers/`). WebGL is available. No network needed.
 
 Reference implementations in `wallpapers/`:
 - `matrix.html` — 25-line minimum.
 - `flow.html` — ~90-line stable-fluids sim (inject → advect → project) with a character ramp and ambient drift.
-- `fluid.html` — asciify.org's Fluid: procedural field → amber tint → `imageToAsciiFrame` → `renderFrameToCanvas` from the engine.
+- `fluid.html` — asciify.org's Fluid: procedural field → amber tint → `imageToAsciiFrame` (engine) → WebGL glyph atlas (one draw call; ~20 % of a core at 1080p vs ~90 % with per-glyph `fillText`).
 
 ## Test
 
