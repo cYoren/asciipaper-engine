@@ -1,0 +1,108 @@
+#!/usr/bin/python3
+"""asciipaper — live ASCII wallpapers for Omarchy / Arch (Hyprland, Wayland).
+
+Renders any web page (a preset, a URL, or a local .html) in a WebKitGTK
+window pinned to the desktop background layer via gtk4-layer-shell.
+
+Usage:
+  asciipaper                 run the wallpaper saved in ~/.config/asciipaper/wallpaper
+  asciipaper fluid           run a preset
+  asciipaper https://…       run any URL
+  asciipaper ./rain.html     run a local file
+  asciipaper set fluid       save the choice and restart the service
+  asciipaper list            list presets
+"""
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+PRELOAD = "/usr/lib/liblayer-shell-preload.so"
+CONFIG = Path.home() / ".config/asciipaper/wallpaper"
+LOCAL = Path.home() / ".local/share/asciipaper/wallpapers"
+DEFAULT = "fluid"
+
+# name -> (url, css selector to isolate; None = show the page as-is)
+PRESETS = {
+    "fluid": ("https://asciify.org/docs/backgrounds/fluid", ".fluid-background"),
+    "matrix": (f"file://{LOCAL}/matrix.html", None),
+}
+
+CSS = """
+html, body { margin:0 !important; padding:0 !important; overflow:hidden !important; background:#080909 !important; }
+header, footer, nav, aside { display:none !important; }
+"""
+
+# Replace <body> with the selected element so only the canvas fills the screen.
+JS = """
+(function () {
+  var el = document.querySelector(%r);
+  if (el && document.body) {
+    document.body.replaceChildren(el);
+    el.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh';
+    var c = el.querySelector('canvas'); if (c) c.style.cssText = el.style.cssText;
+  }
+  window.dispatchEvent(new Event('resize'));
+})();
+"""
+
+
+def resolve(target):
+    if target in PRESETS:
+        return PRESETS[target]
+    if "://" in target:
+        return target, None
+    return f"file://{Path(target).resolve()}", None
+
+
+def run(target):
+    # Pin to the background layer: the preload must be set before GTK loads, so re-exec.
+    if os.environ.get("LD_PRELOAD") != PRELOAD:
+        env = {**os.environ, "LD_PRELOAD": PRELOAD, "LAYER_LAYER": "background",
+               "LAYER_ANCHOR": "lrbt", "LAYER_NAMESPACE": "asciipaper",
+               "LAYER_KEYBOARD": "none", "LAYER_EXCLUSIVE": "0"}
+        os.execve(sys.executable, [sys.executable, *sys.argv], env)
+
+    import gi
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("WebKit2", "4.1")
+    from gi.repository import Gtk, WebKit2
+
+    url, selector = resolve(target)
+    view = WebKit2.WebView(settings=WebKit2.Settings(
+        enable_webgl=True, enable_accelerated_2d_canvas=True,
+        hardware_acceleration_policy=WebKit2.HardwareAccelerationPolicy.ALWAYS))
+    view.get_user_content_manager().add_style_sheet(WebKit2.UserStyleSheet(
+        CSS, WebKit2.UserContentInjectedFrames.ALL_FRAMES, WebKit2.UserStyleLevel.USER, None, None))
+    if selector:
+        view.connect("load-changed", lambda v, e: e == WebKit2.LoadEvent.FINISHED
+                     and v.run_javascript(JS % selector, None, None, None))
+    view.load_uri(url)
+
+    win = Gtk.Window()
+    win.set_default_size(1920, 1080)
+    win.add(view)
+    win.show_all()
+    Gtk.main()
+
+
+def main():
+    args = sys.argv[1:]
+    if args[:1] == ["list"]:
+        print("\n".join(PRESETS))
+    elif args[:1] == ["set"]:
+        if len(args) != 2:
+            sys.exit(__doc__)
+        CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG.write_text(args[1] + "\n")
+        subprocess.run(["systemctl", "--user", "restart", "asciipaper.service"])
+    elif not args:
+        run(CONFIG.read_text().strip() if CONFIG.exists() else DEFAULT)
+    elif len(args) == 1 and not args[0].startswith("-"):
+        run(args[0])
+    else:
+        sys.exit(__doc__)
+
+
+if __name__ == "__main__":
+    main()

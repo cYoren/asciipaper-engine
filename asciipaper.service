@@ -1,0 +1,12 @@
+[Unit]
+Description=asciipaper live ASCII wallpaper (Wayland background layer)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/asciipaper
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
