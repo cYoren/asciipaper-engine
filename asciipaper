@@ -24,7 +24,8 @@ DEFAULT = "fluid"
 
 # name -> (url, css selector to isolate; None = show the page as-is)
 PRESETS = {
-    "fluid": (f"file://{LOCAL}/fluid.html", None),
+    "fluid": (f"file://{LOCAL}/fluid.html", None),   # asciify's Fluid, offline port
+    "flow": (f"file://{LOCAL}/flow.html", None),
     "matrix": (f"file://{LOCAL}/matrix.html", None),
     "asciify": ("https://asciify.org/docs/backgrounds/fluid", ".fluid-background"),  # online
 }

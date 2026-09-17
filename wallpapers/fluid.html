@@ -1,83 +1,133 @@
 <!doctype html>
 <meta charset="utf-8">
+<title>asciify fluid</title>
 <style>html,body{margin:0;height:100%;overflow:hidden;background:#080909}canvas{display:block}</style>
 <canvas id="c"></canvas>
 <script>
-// Offline interactive ASCII fluid. Stable-fluids style: inject → advect → project.
-// Knobs: CW/CH = cell px (bigger = faster, coarser). ITER = pressure solve iterations.
-const CW = 10, CH = 16, ITER = 8, RAMP = ' .:-=+*#%@';
+// The Asciify "Fluid" background, offline. FluidField + paintLiquidSource are ported
+// verbatim from asciify-engine (MIT, © ayangabryl) src/surface/fluid-field.ts —
+// see ../licenses/asciify-engine-MIT.txt. Glyph mapping below is asciipaper's.
+// Knobs: CW/CH cell px (bigger = faster, coarser); RAMP characters; LEVELS brightness steps.
+const CW = 9, CH = 15, RAMP = ' .\'`^",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$', LEVELS = 12;
+
+class FluidField {
+  constructor(aspect = 1, decayRate = 3.5, continuousWake = false) {
+    this.continuousWake = continuousWake; this.decayRate = decayRate;
+    this.aspect = Math.max(.25, Math.min(4, aspect));
+    const resolution = continuousWake ? 96 : 64;
+    this.columns = this.aspect >= 1 ? resolution : Math.round(resolution * this.aspect);
+    this.rows = this.aspect >= 1 ? Math.round(resolution / this.aspect) : resolution;
+    this.front = new Float32Array(this.columns * this.rows * 3); this.back = new Float32Array(this.front.length);
+    this.strokes = []; this.advected = [0, 0, 0]; this.previous = null; this.energy = 0;
+  }
+  get active() { return this.energy > .0005 || this.strokes.length > 0; }
+  move(x, y) {
+    if (!Number.isFinite(x + y)) return;
+    if (this.continuousWake && !this.previous) { this.previous = { x, y }; return; }
+    const previous = this.previous ?? { x: x - .004, y: y - .001 };
+    const dx = Math.max(-.09, Math.min(.09, x - previous.x)), dy = Math.max(-.09, Math.min(.09, y - previous.y));
+    this.previous = { x, y };
+    if (Math.abs(dx) + Math.abs(dy) < .0001) return;
+    const speed = Math.min(1, Math.hypot(dx * this.aspect, dy) * 25 + .06);
+    this.strokes.push({ x, y, dx, dy, speed, fromX: previous.x, fromY: previous.y });
+    if (this.strokes.length > 12) this.strokes.shift();
+  }
+  leave() { this.previous = null; }
+  clear() { this.front.fill(0); this.back.fill(0); this.strokes.length = 0; this.previous = null; this.energy = 0; }
+  read(data, x, y, out) {
+    const gx = Math.max(0, Math.min(this.columns - 1.001, x * (this.columns - 1)));
+    const gy = Math.max(0, Math.min(this.rows - 1.001, y * (this.rows - 1)));
+    const ix = Math.floor(gx), iy = Math.floor(gy), fx = gx - ix, fy = gy - iy;
+    const top = (iy * this.columns + ix) * 3, bottom = top + this.columns * 3, lw = 1 - fx, tw = 1 - fy;
+    out[0] = (data[top] * lw + data[top + 3] * fx) * tw + (data[bottom] * lw + data[bottom + 3] * fx) * fy;
+    out[1] = (data[top + 1] * lw + data[top + 4] * fx) * tw + (data[bottom + 1] * lw + data[bottom + 4] * fx) * fy;
+    out[2] = (data[top + 2] * lw + data[top + 5] * fx) * tw + (data[bottom + 2] * lw + data[bottom + 5] * fx) * fy;
+  }
+  sample(x, y, out) { this.read(this.front, x, y, out); }
+  step(seconds) {
+    if (!this.active) return;
+    const dt = Math.max(0, Math.min(.05, seconds));
+    const decay = Math.exp(-dt * this.decayRate), inkDecay = Math.exp(-dt * (this.decayRate + .5));
+    const xScale = Math.max(1, this.aspect), yScale = Math.max(1, 1 / this.aspect);
+    let peak = 0;
+    for (let y = 0; y < this.rows; y++) for (let x = 0; x < this.columns; x++) {
+      const i = (y * this.columns + x) * 3, u = x / (this.columns - 1), v = y / (this.rows - 1);
+      const transport = this.continuousWake ? .65 : 2;
+      this.read(this.front, u - this.front[i] * dt * transport, v - this.front[i + 1] * dt * transport, this.advected);
+      let dx = this.advected[0] * decay, dy = this.advected[1] * decay, ink = this.advected[2] * inkDecay;
+      for (const stroke of this.strokes) {
+        let rx = (u - stroke.x) * xScale, ry = (v - stroke.y) * yScale;
+        if (this.continuousWake) {
+          const ax = (u - stroke.fromX) * xScale, ay = (v - stroke.fromY) * yScale;
+          const bx = (stroke.x - stroke.fromX) * xScale, by = (stroke.y - stroke.fromY) * yScale;
+          const along = Math.max(0, Math.min(1, (ax * bx + ay * by) / (bx * bx + by * by || 1)));
+          rx = ax - bx * along; ry = ay - by * along;
+          const distance = rx * rx + ry * ry;
+          if (distance > .0225) continue;
+          const weight = Math.exp(-distance / .0032), travel = Math.hypot(stroke.dx * xScale, stroke.dy * yScale);
+          const curl = Math.min(.025, travel * .55);
+          dx += (stroke.dx * 4.2 - ry * curl) * weight; dy += (stroke.dy * 4.2 + rx * curl) * weight;
+          ink = Math.max(ink, Math.min(.7, travel * 18) * weight);
+          continue;
+        }
+        const distance = rx * rx + ry * ry;
+        if (distance > .045) continue;
+        const weight = Math.exp(-distance / .0075), speed = stroke.speed;
+        dx += (stroke.dx * 2.8 - ry * speed * .16) * weight; dy += (stroke.dy * 2.8 + rx * speed * .16) * weight;
+        ink += speed * weight * .3;
+      }
+      this.back[i] = Math.max(-.18, Math.min(.18, dx)); this.back[i + 1] = Math.max(-.18, Math.min(.18, dy));
+      this.back[i + 2] = Math.min(.8, ink);
+      peak = Math.max(peak, Math.abs(dx), Math.abs(dy), ink);
+    }
+    [this.front, this.back] = [this.back, this.front];
+    this.strokes.length = 0; this.energy = peak;
+    if (!this.active) this.clear();
+  }
+}
+
+function paintLiquidSource(pixels, width, height, aspect, time, flow) {
+  const field = [0, 0, 0], moving = flow.active;
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const u = x / width, v = y / height;
+    if (moving) flow.sample(u, v, field);
+    const px = (u - .5 - field[0]) * aspect, py = v - .5 - field[1];
+    const qx = px + .22 * Math.sin(py * 5.2 + time * .17) + .15 * Math.sin(px * 2.4 - py * 3.1 - time * .1);
+    const qy = py + .19 * Math.sin(px * 3.5 + time * .13);
+    const radius = Math.hypot(qx * .8 + .18, qy * 1.1);
+    const folds = .5 + .5 * Math.sin(radius * 14 - qx * 2.8 + Math.sin(qy * 5) * 1.4 - time * .24);
+    const cloud = .5 + .5 * Math.sin(qx * 3.6 - qy * 2.9 + time * .09);
+    pixels[y * width + x] = Math.max(0, Math.min(1, folds * folds * (.48 + cloud * .32) - .075 + field[2] * .75));
+  }
+}
+
+// ---- asciipaper glyph renderer ----
 const c = document.getElementById('c'), x = c.getContext('2d');
-let W, H, cols, rows, N, vx, vy, vx0, vy0, d, d0, p, div, colors = [];
+let W, H, cols, rows, pixels, flow, colors = [];
 function reset() {
   W = c.width = innerWidth; H = c.height = innerHeight;
-  cols = Math.ceil(W / CW); rows = Math.ceil(H / CH); N = cols * rows;
-  [vx, vy, vx0, vy0, d, d0, p, div] = Array.from({ length: 8 }, () => new Float32Array(N));
-  for (let i = 0; i < RAMP.length; i++) colors[i] = `hsl(165 70% ${25 + 55 * i / RAMP.length}%)`;
+  cols = Math.ceil(W / CW); rows = Math.ceil(H / CH); pixels = new Float32Array(cols * rows);
+  flow = new FluidField(W / H);
+  for (let i = 0; i < LEVELS; i++) { const v = 70 + Math.round(170 * i / (LEVELS - 1)); colors[i] = `rgb(${v},${v},${v})`; }
   x.font = `${CH - 2}px monospace`; x.textBaseline = 'top';
 }
 addEventListener('resize', reset); reset();
+addEventListener('pointermove', e => flow.move(e.clientX / W, e.clientY / H));
+addEventListener('pointerleave', () => flow.leave());
 
-const I = (i, j) => i + j * cols;
-function sample(f, fx, fy) {                       // bilinear
-  fx = Math.max(0, Math.min(cols - 1.001, fx)); fy = Math.max(0, Math.min(rows - 1.001, fy));
-  const i = fx | 0, j = fy | 0, s = fx - i, t = fy - j, k = I(i, j);
-  return (f[k] * (1 - s) + f[k + 1] * s) * (1 - t) + (f[k + cols] * (1 - s) + f[k + cols + 1] * s) * t;
-}
-function advect(dst, src, decay) {
-  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
-    const k = I(i, j);
-    dst[k] = sample(src, i - vx0[k], j - vy0[k]) * decay;
-  }
-}
-function project() {                              // make velocity divergence-free
-  for (let j = 1; j < rows - 1; j++) for (let i = 1; i < cols - 1; i++) {
-    const k = I(i, j);
-    div[k] = -0.5 * (vx[k + 1] - vx[k - 1] + vy[k + cols] - vy[k - cols]); p[k] = 0;
-  }
-  for (let n = 0; n < ITER; n++)
-    for (let j = 1; j < rows - 1; j++) for (let i = 1; i < cols - 1; i++) {
-      const k = I(i, j);
-      p[k] = (div[k] + p[k - 1] + p[k + 1] + p[k - cols] + p[k + cols]) / 4;
-    }
-  for (let j = 1; j < rows - 1; j++) for (let i = 1; i < cols - 1; i++) {
-    const k = I(i, j);
-    vx[k] -= 0.5 * (p[k + 1] - p[k - 1]); vy[k] -= 0.5 * (p[k + cols] - p[k - cols]);
-  }
-}
-function splat(cx, cy, fx, fy, dens, r) {
-  for (let j = Math.max(1, cy - r | 0); j < Math.min(rows - 1, cy + r); j++)
-    for (let i = Math.max(1, cx - r | 0); i < Math.min(cols - 1, cx + r); i++) {
-      const w = Math.max(0, 1 - Math.hypot(i - cx, j - cy) / r), k = I(i, j);
-      vx[k] += fx * w; vy[k] += fy * w; d[k] = Math.min(1.5, d[k] + dens * w);
-    }
-}
-
-let mx = -1, my = -1, pmx = -1, pmy = -1;
-addEventListener('pointermove', e => { mx = e.clientX / CW; my = e.clientY / CH; });
-addEventListener('pointerdown', e => splat(e.clientX / CW, e.clientY / CH, 0, 0, 1.5, 8));
-
-let t = 0;
-function step() {
-  t += 0.016;
-  if (mx >= 0 && pmx >= 0) splat(mx, my, (mx - pmx) * 0.6, (my - pmy) * 0.6, 0.35, 4);
-  pmx = mx; pmy = my;
-  for (let s = 0; s < 3; s++) {                    // ambient drift so it lives without a cursor
-    const a = t * 0.25 + s * 2.1, cx = cols * (0.5 + 0.35 * Math.cos(a + s)), cy = rows * (0.5 + 0.35 * Math.sin(a * 0.7));
-    splat(cx, cy, -Math.sin(a) * 0.15, Math.cos(a) * 0.15, 0.03, 6);
-  }
-  vx0.set(vx); vy0.set(vy); advect(vx, vx0, 0.995); advect(vy, vy0, 0.995);
-  project();
-  vx0.set(vx); vy0.set(vy); d0.set(d); advect(d, d0, 0.985);
-
+let last = performance.now();
+function frame(now) {
+  flow.step((now - last) / 1000); last = now;
+  paintLiquidSource(pixels, cols, rows, W / H, now / 1000, flow);
   x.fillStyle = '#080909'; x.fillRect(0, 0, W, H);
-  let last = -1;
+  let lastLevel = -1;
   for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
-    const v = d[I(i, j)]; if (v < 0.03) continue;
-    const l = Math.min(RAMP.length - 1, v * RAMP.length | 0);
-    if (l !== last) x.fillStyle = colors[last = l];
-    x.fillText(RAMP[l], i * CW, j * CH);
+    const v = pixels[j * cols + i]; if (v < .04) continue;
+    const level = Math.min(LEVELS - 1, v * LEVELS | 0);
+    if (level !== lastLevel) x.fillStyle = colors[lastLevel = level];
+    x.fillText(RAMP[Math.min(RAMP.length - 1, v * RAMP.length | 0)], i * CW, j * CH);
   }
-  requestAnimationFrame(step);
+  requestAnimationFrame(frame);
 }
-step();
+requestAnimationFrame(frame);
 </script>

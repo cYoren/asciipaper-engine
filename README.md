@@ -16,9 +16,10 @@ Deps (Arch): `webkit2gtk-4.1 python-gobject gtk4-layer-shell`.
 
 ```sh
 asciipaper list                 # presets
-asciipaper set fluid            # interactive ASCII fluid sim (default, offline)
+asciipaper set fluid            # Asciify's Fluid background, offline port (default)
+asciipaper set flow             # stable-fluids sim, character ramp (offline)
 asciipaper set matrix           # matrix rain (offline)
-asciipaper set asciify          # asciify.org's fluid page (needs internet)
+asciipaper set asciify          # the live asciify.org page (needs internet)
 asciipaper set https://…        # any page
 asciipaper set ~/my/rain.html   # any local file
 ```
@@ -34,7 +35,7 @@ A wallpaper is one self-contained `.html` file. The contract:
 - It's **pointer-interactive**: `mousemove` / `pointerdown` / `wheel` fire when the cursor is over the bare desktop, so react to them (ripples, wake-up, parallax). Keyboard focus is off by design.
 - WebGL is on; no network needed for local files. Any JS the page needs must be inline or bundled — no build step, no server.
 
-`wallpapers/fluid.html` is the reference: a ~90-line stable-fluids sim (inject → advect → pressure-project) drawn as a character ramp, with ambient drift so it moves without a cursor. `matrix.html` is the 25-line minimum. Drop your file anywhere and `asciipaper set /path/to/it.html`, or add it to `wallpapers/` and `PRESETS` and send a PR.
+`wallpapers/flow.html` is the reference: a ~90-line stable-fluids sim (inject → advect → pressure-project) drawn as a character ramp, with ambient drift so it moves without a cursor. `matrix.html` is the 25-line minimum. `fluid.html` shows how to wrap an existing field/painter in the glyph renderer. Drop your file anywhere and `asciipaper set /path/to/it.html`, or add it to `wallpapers/` and `PRESETS` and send a PR.
 
 Prompt that works: *"Write a single-file HTML live ASCII wallpaper for asciipaper: full-screen canvas, monospace fillText, animated with requestAnimationFrame, reacts to mousemove. Theme: ‹ocean waves›."*
 
@@ -46,5 +47,12 @@ Edit `PRESETS` in `asciipaper`: `name: (url, selector)`. The selector (optional)
 
 - Single window, anchored to all edges — on multi-monitor setups it lands on the focused output. Set `LAYER_OUTPUT` if you need to pin it (see gtk4-layer-shell docs).
 - Uses the compositor's `background` layer, so it sits under Omarchy's shell, bars and windows.
+
+## Credits
+
+- `wallpapers/fluid.html` — `FluidField` and `paintLiquidSource` are ported from [asciify-engine](https://github.com/ayangabryl/asciify-engine) by [ayangabryl](https://github.com/ayangabryl), MIT (`licenses/asciify-engine-MIT.txt`). The live original: [asciify.org/docs/backgrounds/fluid](https://asciify.org/docs/backgrounds/fluid).
+- Background layer via [gtk4-layer-shell](https://github.com/wmww/gtk4-layer-shell).
+
+## License
 
 MIT
