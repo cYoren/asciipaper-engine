@@ -141,9 +141,9 @@ function frame(now) {
   paintLiquidSource(img.data, src.width, src.height, W / H, time, flow);
   tint(img.data);
   sx.putImageData(img, 0, 0);
-  const { frame } = imageToAsciiFrame(src, OPTIONS, W, H);
+  const ascii = imageToAsciiFrame(src, OPTIONS, W, H).frame;
   x.setTransform(1, 0, 0, 1, 0, 0);
-  renderFrameToCanvas(x, frame, OPTIONS, W, H, time, null);
+  renderFrameToCanvas(x, ascii, OPTIONS, W, H, time, null);
 }
 requestAnimationFrame(frame);
 </script>
