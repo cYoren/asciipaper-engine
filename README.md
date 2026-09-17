@@ -16,8 +16,9 @@ Deps (Arch): `webkit2gtk-4.1 python-gobject gtk4-layer-shell`.
 
 ```sh
 asciipaper list                 # presets
-asciipaper set fluid            # asciify.org fluid (default)
-asciipaper set matrix           # bundled, offline
+asciipaper set fluid            # interactive ASCII fluid sim (default, offline)
+asciipaper set matrix           # matrix rain (offline)
+asciipaper set asciify          # asciify.org's fluid page (needs internet)
 asciipaper set https://…        # any page
 asciipaper set ~/my/rain.html   # any local file
 ```
@@ -33,7 +34,7 @@ A wallpaper is one self-contained `.html` file. The contract:
 - It's **pointer-interactive**: `mousemove` / `pointerdown` / `wheel` fire when the cursor is over the bare desktop, so react to them (ripples, wake-up, parallax). Keyboard focus is off by design.
 - WebGL is on; no network needed for local files. Any JS the page needs must be inline or bundled — no build step, no server.
 
-`wallpapers/matrix.html` is the reference (25 lines). Drop your file anywhere and `asciipaper set /path/to/it.html`, or add it to `wallpapers/` and `PRESETS` and send a PR.
+`wallpapers/fluid.html` is the reference: a ~90-line stable-fluids sim (inject → advect → pressure-project) drawn as a character ramp, with ambient drift so it moves without a cursor. `matrix.html` is the 25-line minimum. Drop your file anywhere and `asciipaper set /path/to/it.html`, or add it to `wallpapers/` and `PRESETS` and send a PR.
 
 Prompt that works: *"Write a single-file HTML live ASCII wallpaper for asciipaper: full-screen canvas, monospace fillText, animated with requestAnimationFrame, reacts to mousemove. Theme: ‹ocean waves›."*
 

@@ -1,0 +1,83 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#080909}canvas{display:block}</style>
+<canvas id="c"></canvas>
+<script>
+// Offline interactive ASCII fluid. Stable-fluids style: inject → advect → project.
+// Knobs: CW/CH = cell px (bigger = faster, coarser). ITER = pressure solve iterations.
+const CW = 10, CH = 16, ITER = 8, RAMP = ' .:-=+*#%@';
+const c = document.getElementById('c'), x = c.getContext('2d');
+let W, H, cols, rows, N, vx, vy, vx0, vy0, d, d0, p, div, colors = [];
+function reset() {
+  W = c.width = innerWidth; H = c.height = innerHeight;
+  cols = Math.ceil(W / CW); rows = Math.ceil(H / CH); N = cols * rows;
+  [vx, vy, vx0, vy0, d, d0, p, div] = Array.from({ length: 8 }, () => new Float32Array(N));
+  for (let i = 0; i < RAMP.length; i++) colors[i] = `hsl(165 70% ${25 + 55 * i / RAMP.length}%)`;
+  x.font = `${CH - 2}px monospace`; x.textBaseline = 'top';
+}
+addEventListener('resize', reset); reset();
+
+const I = (i, j) => i + j * cols;
+function sample(f, fx, fy) {                       // bilinear
+  fx = Math.max(0, Math.min(cols - 1.001, fx)); fy = Math.max(0, Math.min(rows - 1.001, fy));
+  const i = fx | 0, j = fy | 0, s = fx - i, t = fy - j, k = I(i, j);
+  return (f[k] * (1 - s) + f[k + 1] * s) * (1 - t) + (f[k + cols] * (1 - s) + f[k + cols + 1] * s) * t;
+}
+function advect(dst, src, decay) {
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const k = I(i, j);
+    dst[k] = sample(src, i - vx0[k], j - vy0[k]) * decay;
+  }
+}
+function project() {                              // make velocity divergence-free
+  for (let j = 1; j < rows - 1; j++) for (let i = 1; i < cols - 1; i++) {
+    const k = I(i, j);
+    div[k] = -0.5 * (vx[k + 1] - vx[k - 1] + vy[k + cols] - vy[k - cols]); p[k] = 0;
+  }
+  for (let n = 0; n < ITER; n++)
+    for (let j = 1; j < rows - 1; j++) for (let i = 1; i < cols - 1; i++) {
+      const k = I(i, j);
+      p[k] = (div[k] + p[k - 1] + p[k + 1] + p[k - cols] + p[k + cols]) / 4;
+    }
+  for (let j = 1; j < rows - 1; j++) for (let i = 1; i < cols - 1; i++) {
+    const k = I(i, j);
+    vx[k] -= 0.5 * (p[k + 1] - p[k - 1]); vy[k] -= 0.5 * (p[k + cols] - p[k - cols]);
+  }
+}
+function splat(cx, cy, fx, fy, dens, r) {
+  for (let j = Math.max(1, cy - r | 0); j < Math.min(rows - 1, cy + r); j++)
+    for (let i = Math.max(1, cx - r | 0); i < Math.min(cols - 1, cx + r); i++) {
+      const w = Math.max(0, 1 - Math.hypot(i - cx, j - cy) / r), k = I(i, j);
+      vx[k] += fx * w; vy[k] += fy * w; d[k] = Math.min(1.5, d[k] + dens * w);
+    }
+}
+
+let mx = -1, my = -1, pmx = -1, pmy = -1;
+addEventListener('pointermove', e => { mx = e.clientX / CW; my = e.clientY / CH; });
+addEventListener('pointerdown', e => splat(e.clientX / CW, e.clientY / CH, 0, 0, 1.5, 8));
+
+let t = 0;
+function step() {
+  t += 0.016;
+  if (mx >= 0 && pmx >= 0) splat(mx, my, (mx - pmx) * 0.6, (my - pmy) * 0.6, 0.35, 4);
+  pmx = mx; pmy = my;
+  for (let s = 0; s < 3; s++) {                    // ambient drift so it lives without a cursor
+    const a = t * 0.25 + s * 2.1, cx = cols * (0.5 + 0.35 * Math.cos(a + s)), cy = rows * (0.5 + 0.35 * Math.sin(a * 0.7));
+    splat(cx, cy, -Math.sin(a) * 0.15, Math.cos(a) * 0.15, 0.03, 6);
+  }
+  vx0.set(vx); vy0.set(vy); advect(vx, vx0, 0.995); advect(vy, vy0, 0.995);
+  project();
+  vx0.set(vx); vy0.set(vy); d0.set(d); advect(d, d0, 0.985);
+
+  x.fillStyle = '#080909'; x.fillRect(0, 0, W, H);
+  let last = -1;
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const v = d[I(i, j)]; if (v < 0.03) continue;
+    const l = Math.min(RAMP.length - 1, v * RAMP.length | 0);
+    if (l !== last) x.fillStyle = colors[last = l];
+    x.fillText(RAMP[l], i * CW, j * CH);
+  }
+  requestAnimationFrame(step);
+}
+step();
+</script>
