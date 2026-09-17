@@ -8,10 +8,11 @@
 // FluidField + paintLiquidSource are ported verbatim from asciify-engine
 // src/surface/fluid-field.ts; glyphs are rendered by the unmodified engine
 // (lib/asciify-core.js). MIT, © ayangabryl — see ../licenses/asciify-engine-MIT.txt.
-// Knobs: MIN_FONT = glyph cell px (asciify.org uses 7; smaller = finer + more CPU); MAX_GLYPHS caps density; FPS.
+// Knobs: MIN_FONT = glyph cell px (asciify.org uses 7; smaller = finer + more CPU); MAX_GLYPHS caps density; FPS;
+// SCALE = backing-buffer supersampling for smoother letters (GPU cost only; asciify.org uses devicePixelRatio, capped at 1.5).
 import { DEFAULT_OPTIONS, imageToAsciiFrame } from './lib/asciify-core.js';
 
-const MIN_FONT = 6, MAX_GLYPHS = 40e3, FPS = 30;
+const MIN_FONT = 7, MAX_GLYPHS = 26e3, FPS = 30, SCALE = 2;
 const OPTIONS = { ...DEFAULT_OPTIONS, fontSize: 7, charAspect: .58, charset: ' .:+-=xICA$FY#@',
   colorMode: 'fullcolor', accentColor: '#e8b900', normalize: false, contrast: .1, hoverStrength: 0, chromaKey: null };
 
@@ -122,13 +123,13 @@ const src = document.createElement('canvas'), sx = src.getContext('2d', { willRe
 let W, H, img, flow, cols = 0, rows = 0, cells;
 
 const gl = c.getContext('webgl', { antialias: false, depth: false, stencil: false, premultipliedAlpha: false });
-const CHARS = OPTIONS.charset, ATLAS = 32;                     // atlas cell px (glyph resolution)
+const CHARS = OPTIONS.charset, PAD = 3;                        // atlas tile padding px, as on asciify.org
 const sh = (type, code) => { const o = gl.createShader(type); gl.shaderSource(o, code); gl.compileShader(o); return o; };
 const prog = gl.createProgram();
 gl.attachShader(prog, sh(gl.VERTEX_SHADER, 'attribute vec2 p;varying vec2 v;void main(){v=vec2(p.x,1.0-p.y);gl_Position=vec4(p*2.0-1.0,0,1);}'));
-gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `precision mediump float;varying vec2 v;uniform sampler2D cells,atlas;uniform vec2 grid;uniform float n;
+gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `precision mediump float;varying vec2 v;uniform sampler2D cells,atlas;uniform vec2 grid,cell,atlasSize;uniform float tile,pad;
 void main(){vec2 g=v*grid;vec4 d=texture2D(cells,(floor(g)+0.5)/grid);vec2 l=fract(g);
-float a=texture2D(atlas,vec2((floor(d.r*255.0+0.5)+l.x)/n,l.y)).a;gl_FragColor=vec4(d.gba*a,1.0);}`));
+vec2 uv=(vec2(floor(d.r*255.0+0.5)*tile,0.0)+pad+l*cell)/atlasSize;gl_FragColor=vec4(d.gba*texture2D(atlas,uv).a,1.0);}`));
 gl.linkProgram(prog); gl.useProgram(prog);
 gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
@@ -138,20 +139,24 @@ const tex = (unit) => { const t = gl.createTexture(); gl.activeTexture(gl.TEXTUR
 const cellTex = tex(0); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 const atlasTex = tex(1); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 gl.uniform1i(gl.getUniformLocation(prog, 'cells'), 0); gl.uniform1i(gl.getUniformLocation(prog, 'atlas'), 1);
-gl.uniform1f(gl.getUniformLocation(prog, 'n'), CHARS.length);
-const gridLoc = gl.getUniformLocation(prog, 'grid');
+const U = (name) => gl.getUniformLocation(prog, name), gridLoc = U('grid');
 const glyphIndex = Object.fromEntries([...CHARS].map((ch, i) => [ch, i]));
 
-function buildAtlas(cellW, cellH) {                             // same font/size rule as the engine's canvas renderer
-  const a = document.createElement('canvas'), ax = a.getContext('2d'), k = ATLAS / cellW;
-  a.width = ATLAS * CHARS.length; a.height = Math.round(cellH * k);
-  ax.font = `${.9 * Math.min(cellW / .55, cellH) * k}px "JetBrains Mono", monospace`; ax.textBaseline = 'middle'; ax.fillStyle = '#fff';
-  [...CHARS].forEach((ch, i) => ax.fillText(ch, i * ATLAS, a.height / 2));
+function buildAtlas(cellW, cellH) {                             // glyphs rasterized at exact cell size, as on asciify.org
+  const a = document.createElement('canvas'), ax = a.getContext('2d');
+  const tile = Math.ceil(cellW) + PAD * 2, tileH = Math.ceil(cellH) + PAD * 2;
+  a.width = tile * CHARS.length; a.height = tileH;
+  ax.font = `${.9 * Math.min(cellW / .55, cellH)}px "JetBrains Mono", monospace`;
+  ax.textAlign = 'center'; ax.textBaseline = 'middle'; ax.fillStyle = '#fff';
+  [...CHARS].forEach((ch, i) => ax.fillText(ch, i * tile + PAD + cellW / 2, PAD + cellH / 2));
   gl.activeTexture(gl.TEXTURE1); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, a);
+  gl.uniform2f(U('cell'), cellW, cellH); gl.uniform2f(U('atlasSize'), a.width, a.height);
+  gl.uniform1f(U('tile'), tile); gl.uniform1f(U('pad'), PAD);
 }
 
 function reset() {
-  W = c.width = innerWidth; H = c.height = innerHeight; gl.viewport(0, 0, W, H);
+  W = innerWidth; H = innerHeight; c.width = W * SCALE; c.height = H * SCALE;
+  c.style.width = W + 'px'; c.style.height = H + 'px'; gl.viewport(0, 0, c.width, c.height);
   OPTIONS.fontSize = Math.max(MIN_FONT, Math.sqrt(W * H * OPTIONS.charAspect / MAX_GLYPHS));
   const n = Math.max(192, Math.min(384, Math.ceil(Math.max(W, H * OPTIONS.charAspect) / (OPTIONS.fontSize * OPTIONS.charSpacing))));
   const aspect = W / H;
@@ -177,7 +182,7 @@ function frame(now) {
   if (!ascii.length) return;
   if (ascii.length !== rows || ascii[0].length !== cols) {
     rows = ascii.length; cols = ascii[0].length; cells = new Uint8Array(cols * rows * 4);
-    gl.uniform2f(gridLoc, cols, rows); buildAtlas(W / cols, H / rows);
+    gl.uniform2f(gridLoc, cols, rows); buildAtlas(c.width / cols, c.height / rows);
   }
   for (let j = 0, k = 0; j < rows; j++) for (let i = 0; i < cols; i++, k += 4) {
     const cell = ascii[j][i];

@@ -41,6 +41,10 @@ A wallpaper is one self-contained `.html` file. The contract:
 
 Prompt that works: *"Write a single-file HTML live ASCII wallpaper for asciipaper: full-screen canvas, monospace fillText, animated with requestAnimationFrame, reacts to mousemove. Theme: ‹ocean waves›."*
 
+## Tuning `fluid`
+
+Top of `wallpapers/fluid.html`: `MIN_FONT` (glyph cell px; 7 = asciify.org, 5–6 = finer), `SCALE` (supersampling; 2 = smoother letters, 1 = cheapest), `FPS`, and `OPTIONS.charset` / `accentColor`. After editing: `asciipaper set fluid`.
+
 ## Add a preset
 
 Edit `PRESETS` in `asciipaper`: `name: (url, selector)`. The selector (optional) is the element to isolate — everything else on the page is removed so the canvas fills the screen.
