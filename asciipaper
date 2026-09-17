@@ -30,7 +30,7 @@ PRESETS = {
 
 CSS = """
 html, body { margin:0 !important; padding:0 !important; overflow:hidden !important; background:#080909 !important; }
-header, footer, nav, aside { display:none !important; }
+header, footer, nav, aside, .fluid-background-controls { display:none !important; }
 """
 
 # Replace <body> with the selected element so only the canvas fills the screen.
