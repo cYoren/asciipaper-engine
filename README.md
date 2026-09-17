@@ -12,7 +12,16 @@ Ships with an offline, 1:1 port of the [asciify.org Fluid background](https://as
 git clone https://github.com/cYoren/asciipaper && cd asciipaper && ./install.sh
 ```
 
-Deps (Arch): `webkitgtk-6.0 python-gobject gtk4-layer-shell`. Remove with `./install.sh uninstall`.
+Deps: WebKitGTK 6.0, gtk4-layer-shell, PyGObject. `install.sh` knows pacman (tested), dnf and apt (untested — PRs welcome). Remove with `./install.sh uninstall`.
+
+Works on any Wayland compositor that implements `wlr-layer-shell`: Hyprland, Sway, niri, river, Wayfire, labwc, KDE Plasma. Not GNOME (Mutter has no layer-shell) and not X11.
+
+## Windows / macOS
+
+The engine is Wayland-only, but every wallpaper in `wallpapers/` is a plain single-file web page with zero dependencies. Point an HTML-wallpaper tool at it:
+
+- **Windows** — [Lively Wallpaper](https://github.com/rocksdanister/lively) (free, open source) or Wallpaper Engine → add `wallpapers/fluid.html` as a web wallpaper.
+- **macOS** — [Plash](https://github.com/sindresorhus/Plash) (free, open source) → open `file:///…/wallpapers/fluid.html`.
 
 ## Use
 
