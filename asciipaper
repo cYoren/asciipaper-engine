@@ -72,7 +72,7 @@ def run(target):
 
     url, selector = resolve(target)
     view = WebKit2.WebView(settings=WebKit2.Settings(
-        enable_webgl=True, enable_accelerated_2d_canvas=True,
+        enable_webgl=True, enable_accelerated_2d_canvas=True, allow_file_access_from_file_urls=True,
         hardware_acceleration_policy=WebKit2.HardwareAccelerationPolicy.ALWAYS))
     view.get_user_content_manager().add_style_sheet(WebKit2.UserStyleSheet(
         CSS, WebKit2.UserContentInjectedFrames.ALL_FRAMES, WebKit2.UserStyleLevel.USER, None, None))
