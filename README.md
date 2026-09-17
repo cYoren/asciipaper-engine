@@ -43,7 +43,7 @@ Prompt that works: *"Write a single-file HTML live ASCII wallpaper for asciipape
 
 ## Tuning `fluid`
 
-Top of `wallpapers/fluid.html`: `MIN_FONT` (glyph cell px; 7 = asciify.org, 5–6 = finer), `SCALE` (supersampling; 2 = smoother letters, 1 = cheapest), `FPS`, and `OPTIONS.charset` / `accentColor`. After editing: `asciipaper set fluid`.
+The whole frame runs on the GPU (liquid field, tint and glyph atlas in two fragment shaders; the engine's luminance→glyph table is read once at startup), so it costs **~5 % of one core at 1080p** and ~0 when covered. Top of `wallpapers/fluid.html`: `MIN_FONT` (glyph cell px; 7 = asciify.org, 5–6 = finer), `SCALE` (supersampling; 2 = smoother letters), `FPS` (24; the fluid is slow, 30 buys nothing visible), `OPTIONS.charset` / `accentColor`. After editing: `asciipaper set fluid`.
 
 ## Add a preset
 

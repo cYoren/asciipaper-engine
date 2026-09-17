@@ -4,17 +4,20 @@
 <style>html,body{margin:0;height:100%;overflow:hidden;background:#080909}canvas{display:block}</style>
 <canvas id="c"></canvas>
 <script type="module">
-// The Asciify "Fluid" background (asciify.org/docs/backgrounds/fluid), offline.
-// FluidField + paintLiquidSource are ported verbatim from asciify-engine
-// src/surface/fluid-field.ts; glyphs are rendered by the unmodified engine
-// (lib/asciify-core.js). MIT, © ayangabryl — see ../licenses/asciify-engine-MIT.txt.
-// Knobs: MIN_FONT = glyph cell px (asciify.org uses 7; smaller = finer + more CPU); MAX_GLYPHS caps density; FPS;
-// SCALE = backing-buffer supersampling for smoother letters (GPU cost only; asciify.org uses devicePixelRatio, capped at 1.5).
+// The Asciify "Fluid" background (asciify.org/docs/backgrounds/fluid), offline, on the GPU.
+// FluidField (pointer wake) is ported verbatim from asciify-engine src/surface/fluid-field.ts;
+// paintLiquidSource + the site's amber tint are the same math, in GLSL. Which character each cell
+// gets is decided by the unmodified engine (lib/asciify-core.js): its luminance→glyph table is read
+// once at startup. MIT, © ayangabryl — see ../licenses/asciify-engine-MIT.txt.
+// Per frame, JS only steps the small pointer field and issues two draw calls.
+// Knobs: MIN_FONT = glyph cell px (asciify.org uses 7; smaller = finer); MAX_GLYPHS caps density; FPS;
+// SCALE = backing-buffer supersampling for smoother letters (GPU cost only).
 import { DEFAULT_OPTIONS, imageToAsciiFrame } from './lib/asciify-core.js';
 
-const MIN_FONT = 7, MAX_GLYPHS = 26e3, FPS = 30, SCALE = 2;
+const MIN_FONT = 7, MAX_GLYPHS = 26e3, FPS = 24, SCALE = 2, PAD = 3;
 const OPTIONS = { ...DEFAULT_OPTIONS, fontSize: 7, charAspect: .58, charset: ' .:+-=xICA$FY#@',
   colorMode: 'fullcolor', accentColor: '#e8b900', normalize: false, contrast: .1, hoverStrength: 0, chromaKey: null };
+const CHARS = OPTIONS.charset;
 
 class FluidField {
   constructor(aspect = 1, decayRate = 3.5, continuousWake = false) {
@@ -92,105 +95,116 @@ class FluidField {
   }
 }
 
-function paintLiquidSource(pixels, width, height, aspect, time, flow) {
-  const field = [0, 0, 0], moving = flow.active;
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    const u = x / width, v = y / height;
-    if (moving) flow.sample(u, v, field);
-    const px = (u - .5 - field[0]) * aspect, py = v - .5 - field[1];
-    const qx = px + .22 * Math.sin(py * 5.2 + time * .17) + .15 * Math.sin(px * 2.4 - py * 3.1 - time * .1);
-    const qy = py + .19 * Math.sin(px * 3.5 + time * .13);
-    const radius = Math.hypot(qx * .8 + .18, qy * 1.1);
-    const folds = .5 + .5 * Math.sin(radius * 14 - qx * 2.8 + Math.sin(qy * 5) * 1.4 - time * .24);
-    const cloud = .5 + .5 * Math.sin(qx * 3.6 - qy * 2.9 + time * .09);
-    const light = Math.max(0, Math.min(1, folds * folds * (.48 + cloud * .32) - .075 + field[2] * .75));
-    const value = Math.round(light * 255), i = (y * width + x) * 4;
-    pixels[i] = pixels[i + 1] = pixels[i + 2] = value; pixels[i + 3] = 255;
-  }
-}
-// Amber ink, as on asciify.org.
-function tint(pixels) {
-  for (let i = 0; i < pixels.length; i += 4) {
-    const v = pixels[i] < 10 ? 0 : Math.min(255, pixels[i] * 1.45);
-    pixels[i] = v; pixels[i + 1] = v * (185 / 232); pixels[i + 2] = 0; pixels[i + 3] = 255;
-  }
-}
-
-// ---- engine pipeline, same as the site: paint → tint → asciify → draw ----
-// Glyphs are drawn on the GPU (one quad, per-cell lookup into a glyph atlas), like asciify.org.
+// ---- GPU pipeline: pass 1 = liquid source → tint → glyph index per cell; pass 2 = glyph atlas ----
 const c = document.getElementById('c');
-const src = document.createElement('canvas'), sx = src.getContext('2d', { willReadFrequently: true });
-let W, H, img, flow, cols = 0, rows = 0, cells;
-
 const gl = c.getContext('webgl', { antialias: false, depth: false, stencil: false, premultipliedAlpha: false });
-const CHARS = OPTIONS.charset, PAD = 3;                        // atlas tile padding px, as on asciify.org
-const sh = (type, code) => { const o = gl.createShader(type); gl.shaderSource(o, code); gl.compileShader(o); return o; };
-const prog = gl.createProgram();
-gl.attachShader(prog, sh(gl.VERTEX_SHADER, 'attribute vec2 p;varying vec2 v;void main(){v=vec2(p.x,1.0-p.y);gl_Position=vec4(p*2.0-1.0,0,1);}'));
-gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `precision mediump float;varying vec2 v;uniform sampler2D cells,atlas;uniform vec2 grid,cell,atlasSize;uniform float tile,pad;
-void main(){vec2 g=v*grid;vec4 d=texture2D(cells,(floor(g)+0.5)/grid);vec2 l=fract(g);
-vec2 uv=(vec2(floor(d.r*255.0+0.5)*tile,0.0)+pad+l*cell)/atlasSize;gl_FragColor=vec4(d.gba*texture2D(atlas,uv).a,1.0);}`));
-gl.linkProgram(prog); gl.useProgram(prog);
+const QUAD = 'attribute vec2 p;varying vec2 v;void main(){v=p;gl_Position=vec4(p*2.0-1.0,0,1);}';
+const CELLS = `precision highp float;varying vec2 v;uniform sampler2D flow,lut;uniform float aspect,time,moving;
+void main(){
+  vec2 uv=vec2(v.x,1.0-v.y);
+  vec3 f=moving>0.5?(texture2D(flow,uv).rgb-vec3(0.5,0.5,0.0))*vec3(0.36,0.36,0.8):vec3(0.0);
+  float px=(uv.x-0.5-f.x)*aspect, py=uv.y-0.5-f.y;
+  float qx=px+0.22*sin(py*5.2+time*0.17)+0.15*sin(px*2.4-py*3.1-time*0.1);
+  float qy=py+0.19*sin(px*3.5+time*0.13);
+  float radius=length(vec2(qx*0.8+0.18,qy*1.1));
+  float folds=0.5+0.5*sin(radius*14.0-qx*2.8+sin(qy*5.0)*1.4-time*0.24);
+  float cloud=0.5+0.5*sin(qx*3.6-qy*2.9+time*0.09);
+  float light=clamp(folds*folds*(0.48+cloud*0.32)-0.075+f.z*0.75,0.0,1.0);
+  float value=floor(light*255.0+0.5);
+  float r=value<10.0?0.0:min(255.0,value*1.45), g=r*185.0/232.0;       // amber ink, as on asciify.org
+  float lum=floor(0.299*r+0.587*g);
+  gl_FragColor=vec4(texture2D(lut,vec2((lum+0.5)/256.0,0.5)).a, r/255.0, g/255.0, 0.0);
+}`;
+const GLYPHS = `precision mediump float;varying vec2 v;uniform sampler2D cells,atlas;uniform vec2 grid,cell,atlasSize;uniform float tile,pad;
+void main(){vec2 g=vec2(v.x,1.0-v.y)*grid;vec4 d=texture2D(cells,(floor(g)+0.5)/grid);vec2 l=fract(g);
+vec2 uv=(vec2(floor(d.r*255.0+0.5)*tile,0.0)+pad+l*cell)/atlasSize;gl_FragColor=vec4(d.gba*texture2D(atlas,uv).a,1.0);}`;
+
+const sh = (type, code) => { const o = gl.createShader(type); gl.shaderSource(o, code); gl.compileShader(o);
+  if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; };
+const program = (frag) => { const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, QUAD)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, frag));
+  gl.linkProgram(p); gl.useProgram(p); const a = gl.getAttribLocation(p, 'p'); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0); return p; };
+const texture = (unit, filter) => { const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
+  for (const k of ['WRAP_S', 'WRAP_T']) gl.texParameteri(gl.TEXTURE_2D, gl[`TEXTURE_${k}`], gl.CLAMP_TO_EDGE);
+  for (const k of ['MIN_FILTER', 'MAG_FILTER']) gl.texParameteri(gl.TEXTURE_2D, gl[`TEXTURE_${k}`], filter); return t; };
 gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
-const ploc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(ploc); gl.vertexAttribPointer(ploc, 2, gl.FLOAT, false, 0, 0);
-const tex = (unit) => { const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
-  for (const k of ['WRAP_S', 'WRAP_T']) gl.texParameteri(gl.TEXTURE_2D, gl[`TEXTURE_${k}`], gl.CLAMP_TO_EDGE); return t; };
-const cellTex = tex(0); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-const atlasTex = tex(1); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-gl.uniform1i(gl.getUniformLocation(prog, 'cells'), 0); gl.uniform1i(gl.getUniformLocation(prog, 'atlas'), 1);
-const U = (name) => gl.getUniformLocation(prog, name), gridLoc = U('grid');
-const glyphIndex = Object.fromEntries([...CHARS].map((ch, i) => [ch, i]));
+
+const cellsTex = texture(0, gl.NEAREST), atlasTex = texture(1, gl.LINEAR), flowTex = texture(2, gl.LINEAR), lutTex = texture(3, gl.NEAREST);
+const glyphProg = program(GLYPHS), cellProg = program(CELLS);
+const U = (p, n) => gl.getUniformLocation(p, n);
+gl.useProgram(glyphProg); gl.uniform1i(U(glyphProg, 'cells'), 0); gl.uniform1i(U(glyphProg, 'atlas'), 1);
+gl.useProgram(cellProg); gl.uniform1i(U(cellProg, 'flow'), 2); gl.uniform1i(U(cellProg, 'lut'), 3);
+const fbo = gl.createFramebuffer();
+
+// Ask the engine which glyph each luminance 0..255 gets (256 one-pixel cells over a gray ramp).
+{
+  const ramp = document.createElement('canvas'); ramp.width = 256; ramp.height = 1;
+  const rx = ramp.getContext('2d'), id = rx.createImageData(256, 1);
+  for (let i = 0; i < 256; i++) id.data.set([i, i, i, 255], i * 4);
+  rx.putImageData(id, 0, 0);
+  const row = imageToAsciiFrame(ramp, { ...OPTIONS, fontSize: 1, charAspect: 1, charSpacing: 1 }, 256, 1).frame[0];
+  const lut = new Uint8Array(256 * 4);
+  row.forEach((cell, i) => lut[i * 4 + 3] = Math.max(0, CHARS.indexOf(cell.char)));
+  gl.activeTexture(gl.TEXTURE3); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, lut);
+}
 
 function buildAtlas(cellW, cellH) {                             // glyphs rasterized at exact cell size, as on asciify.org
   const a = document.createElement('canvas'), ax = a.getContext('2d');
-  const tile = Math.ceil(cellW) + PAD * 2, tileH = Math.ceil(cellH) + PAD * 2;
-  a.width = tile * CHARS.length; a.height = tileH;
+  const tile = Math.ceil(cellW) + PAD * 2;
+  a.width = tile * CHARS.length; a.height = Math.ceil(cellH) + PAD * 2;
   ax.font = `${.9 * Math.min(cellW / .55, cellH)}px "JetBrains Mono", monospace`;
   ax.textAlign = 'center'; ax.textBaseline = 'middle'; ax.fillStyle = '#fff';
   [...CHARS].forEach((ch, i) => ax.fillText(ch, i * tile + PAD + cellW / 2, PAD + cellH / 2));
   gl.activeTexture(gl.TEXTURE1); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, a);
-  gl.uniform2f(U('cell'), cellW, cellH); gl.uniform2f(U('atlasSize'), a.width, a.height);
-  gl.uniform1f(U('tile'), tile); gl.uniform1f(U('pad'), PAD);
+  gl.useProgram(glyphProg);
+  gl.uniform2f(U(glyphProg, 'cell'), cellW, cellH); gl.uniform2f(U(glyphProg, 'atlasSize'), a.width, a.height);
+  gl.uniform1f(U(glyphProg, 'tile'), tile); gl.uniform1f(U(glyphProg, 'pad'), PAD);
 }
 
+let W, H, cols, rows, flow, flowBytes;
 function reset() {
   W = innerWidth; H = innerHeight; c.width = W * SCALE; c.height = H * SCALE;
-  c.style.width = W + 'px'; c.style.height = H + 'px'; gl.viewport(0, 0, c.width, c.height);
-  OPTIONS.fontSize = Math.max(MIN_FONT, Math.sqrt(W * H * OPTIONS.charAspect / MAX_GLYPHS));
-  const n = Math.max(192, Math.min(384, Math.ceil(Math.max(W, H * OPTIONS.charAspect) / (OPTIONS.fontSize * OPTIONS.charSpacing))));
+  c.style.width = W + 'px'; c.style.height = H + 'px';
+  const fontSize = Math.max(MIN_FONT, Math.sqrt(W * H * OPTIONS.charAspect / MAX_GLYPHS));   // site's grid rule
+  cols = Math.floor(W / (fontSize * OPTIONS.charSpacing)); rows = Math.floor(H / (fontSize / OPTIONS.charAspect * OPTIONS.charSpacing));
   const aspect = W / H;
-  src.width = Math.max(1, Math.round(aspect >= 1 ? n : n * aspect)); src.height = Math.max(1, Math.round(aspect >= 1 ? n / aspect : n));
-  img = sx.createImageData(src.width, src.height);
-  flow = new FluidField(aspect);
-  cols = 0;                                                     // cell texture is (re)built on the next frame
+  flow = new FluidField(aspect); flowBytes = new Uint8Array(flow.columns * flow.rows * 3);
+  gl.activeTexture(gl.TEXTURE0); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, cols, rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, cellsTex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.useProgram(glyphProg); gl.uniform2f(U(glyphProg, 'grid'), cols, rows);
+  gl.useProgram(cellProg); gl.uniform1f(U(cellProg, 'aspect'), aspect);
+  buildAtlas(c.width / cols, c.height / rows);
 }
 addEventListener('resize', reset); reset();
 addEventListener('pointermove', e => flow.move(e.clientX / W, e.clientY / H));
 addEventListener('pointerleave', () => flow.leave());
 
+// FluidField.front is [dx, dy, ink] per cell; pack to bytes for the GPU (dx,dy ∈ ±.18, ink ∈ 0..8).
+function uploadFlow() {
+  const f = flow.front;
+  for (let i = 0, n = f.length; i < n; i += 3) {
+    flowBytes[i] = 127.5 + f[i] / .36 * 255; flowBytes[i + 1] = 127.5 + f[i + 1] / .36 * 255; flowBytes[i + 2] = f[i + 2] / .8 * 255;
+  }
+  gl.activeTexture(gl.TEXTURE2);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, flow.columns, flow.rows, 0, gl.RGB, gl.UNSIGNED_BYTE, flowBytes);
+}
+
 let last = 0, time = 12;
 function frame(now) {
   requestAnimationFrame(frame);
   if (now - last < 1000 / FPS - .5) return;
-  const dt = last ? Math.min(.05, (now - last) / 1000) : 1 / 60; last = now; time += dt;
+  const dt = last ? Math.min(.05, (now - last) / 1000) : 1 / 60; last = now;
+  time = 12 + (time - 12 + dt) % (200 * Math.PI);                // every sin coefficient is a multiple of .01 → exact period
   flow.step(dt);
-  paintLiquidSource(img.data, src.width, src.height, W / H, time, flow);
-  tint(img.data);
-  sx.putImageData(img, 0, 0);
-  const ascii = imageToAsciiFrame(src, OPTIONS, W, H).frame;
-  if (!ascii.length) return;
-  if (ascii.length !== rows || ascii[0].length !== cols) {
-    rows = ascii.length; cols = ascii[0].length; cells = new Uint8Array(cols * rows * 4);
-    gl.uniform2f(gridLoc, cols, rows); buildAtlas(c.width / cols, c.height / rows);
-  }
-  for (let j = 0, k = 0; j < rows; j++) for (let i = 0; i < cols; i++, k += 4) {
-    const cell = ascii[j][i];
-    cells[k] = glyphIndex[cell.char] ?? 0; cells[k + 1] = cell.r; cells[k + 2] = cell.g; cells[k + 3] = cell.b;
-  }
-  gl.activeTexture(gl.TEXTURE0);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, cols, rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, cells);
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  const moving = flow.active;
+  if (moving) uploadFlow();
+  gl.useProgram(cellProg);
+  gl.uniform1f(U(cellProg, 'time'), time); gl.uniform1f(U(cellProg, 'moving'), moving ? 1 : 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.viewport(0, 0, cols, rows); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, c.width, c.height);
+  gl.useProgram(glyphProg); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 requestAnimationFrame(frame);
 </script>

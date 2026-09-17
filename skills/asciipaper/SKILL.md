@@ -29,11 +29,11 @@ Write one `.html` file that:
 Reference implementations in `wallpapers/`:
 - `matrix.html` — 25-line minimum.
 - `flow.html` — ~90-line stable-fluids sim (inject → advect → project) with a character ramp and ambient drift.
-- `fluid.html` — asciify.org's Fluid: procedural field → amber tint → `imageToAsciiFrame` (engine) → WebGL glyph atlas (one draw call; ~20 % of a core at 1080p vs ~90 % with per-glyph `fillText`).
+- `fluid.html` — asciify.org's Fluid, fully on the GPU: pass 1 evaluates the liquid field + tint per cell and looks up the glyph in a 256-entry LUT the engine produced at startup; pass 2 draws a glyph atlas. JS per frame: step the small pointer field, two draw calls. ~5 % CPU at 1080p/24 fps — copy this structure for anything dense.
 
 ## Test
 
-`asciipaper ./new.html` shows it live. Run it in any browser first for console errors. Check CPU with `ps -eo %cpu,cmd | grep WebKitWebProcess`; > 15 % means raise the cell size or lower the fps.
+`asciipaper ./new.html` shows it live. Run it in any browser first for console errors. Check CPU with `ps -eo %cpu,cmd | grep WebKitWebProcess`; WebKit's own floor is ~0.2 % per fps, so budget ≤ 5 % at 24 fps. Above that: move per-pixel work into a fragment shader (see `fluid.html`), raise the cell size, or lower the fps.
 
 ## Contribute a preset
 
