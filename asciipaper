@@ -2,7 +2,7 @@
 """asciipaper — live ASCII wallpapers for Omarchy / Arch (Hyprland, Wayland).
 
 Renders any web page (a preset, a URL, or a local .html) in a WebKitGTK
-window pinned to the desktop background layer via gtk4-layer-shell.
+window pinned to the desktop background layer of every monitor.
 
 Usage:
   asciipaper                 run the wallpaper saved in ~/.config/asciipaper/wallpaper
@@ -17,7 +17,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-PRELOAD = "/usr/lib/liblayer-shell-preload.so"
+# gtk4-layer-shell must be linked before libwayland; for Python that means preloading it.
+PRELOAD = "/usr/lib/libgtk4-layer-shell.so"
+
 CONFIG = Path.home() / ".config/asciipaper/wallpaper"
 LOCAL = Path.home() / ".local/share/asciipaper/wallpapers"
 DEFAULT = "fluid"
@@ -54,38 +56,60 @@ def resolve(target):
         return PRESETS[target]
     if "://" in target:
         return target, None
-    return f"file://{Path(target).resolve()}", None
+    path = Path(target).expanduser().resolve()
+    if not path.is_file():
+        sys.exit(f"asciipaper: no such preset, URL or file: {target}\nPresets: {', '.join(PRESETS)}")
+    return f"file://{path}", None
 
 
 def run(target):
-    # Pin to the background layer: the preload must be set before GTK loads, so re-exec.
-    if os.environ.get("LD_PRELOAD") != PRELOAD:
-        env = {**os.environ, "LD_PRELOAD": PRELOAD, "LAYER_LAYER": "background",
-               "LAYER_ANCHOR": "lrbt", "LAYER_NAMESPACE": "asciipaper",
-               "LAYER_KEYBOARD": "none", "LAYER_EXCLUSIVE": "0"}
-        os.execve(sys.executable, [sys.executable, *sys.argv], env)
-
-    import gi
-    gi.require_version("Gtk", "3.0")
-    gi.require_version("WebKit2", "4.1")
-    from gi.repository import Gtk, WebKit2
-
     url, selector = resolve(target)
-    view = WebKit2.WebView(settings=WebKit2.Settings(
-        enable_webgl=True, enable_accelerated_2d_canvas=True, allow_file_access_from_file_urls=True,
-        hardware_acceleration_policy=WebKit2.HardwareAccelerationPolicy.ALWAYS))
-    view.get_user_content_manager().add_style_sheet(WebKit2.UserStyleSheet(
-        CSS, WebKit2.UserContentInjectedFrames.ALL_FRAMES, WebKit2.UserStyleLevel.USER, None, None))
-    if selector:
-        view.connect("load-changed", lambda v, e: e == WebKit2.LoadEvent.FINISHED
-                     and v.run_javascript(JS % selector, None, None, None))
-    view.load_uri(url)
+    if os.environ.get("LD_PRELOAD") != PRELOAD and os.path.exists(PRELOAD):
+        os.execve(sys.executable, [sys.executable, *sys.argv], {**os.environ, "LD_PRELOAD": PRELOAD})
+    try:
+        import gi
+        gi.require_version("Gdk", "4.0")
+        gi.require_version("Gtk", "4.0")
+        gi.require_version("WebKit", "6.0")
+        gi.require_version("Gtk4LayerShell", "1.0")
+        from gi.repository import Gdk, Gtk, WebKit, Gtk4LayerShell as Layer
+    except (ImportError, ValueError) as e:
+        sys.exit(f"asciipaper: {e}\nInstall: sudo pacman -S --needed webkitgtk-6.0 python-gobject gtk4-layer-shell")
 
-    win = Gtk.Window()
-    win.set_default_size(1920, 1080)
-    win.add(view)
-    win.show_all()
-    Gtk.main()
+    settings = WebKit.Settings(enable_webgl=True, hardware_acceleration_policy=WebKit.HardwareAccelerationPolicy.ALWAYS,
+                               allow_file_access_from_file_urls=True)
+    content = WebKit.UserContentManager()
+    content.add_style_sheet(WebKit.UserStyleSheet(CSS, WebKit.UserContentInjectedFrames.ALL_FRAMES,
+                                                  WebKit.UserStyleLevel.USER, None, None))
+
+    def window(monitor):
+        view = WebKit.WebView(settings=settings, user_content_manager=content)
+        if selector:
+            view.connect("load-changed", lambda v, e: e == WebKit.LoadEvent.FINISHED
+                         and v.evaluate_javascript(JS % selector, -1, None, None, None, None, None))
+        view.load_uri(url)
+        win = Gtk.Window(application=app, child=view)
+        Layer.init_for_window(win)
+        Layer.set_layer(win, Layer.Layer.BACKGROUND)
+        Layer.set_namespace(win, "asciipaper")
+        Layer.set_monitor(win, monitor)
+        for edge in Layer.Edge:
+            if edge != Layer.Edge.ENTRY_NUMBER:
+                Layer.set_anchor(win, edge, True)
+        Layer.set_keyboard_mode(win, Layer.KeyboardMode.NONE)
+        Layer.set_exclusive_zone(win, -1)
+        win.present()
+
+    def activate(app):
+        monitors = Gdk.Display.get_default().get_monitors()
+        for m in monitors:
+            window(m)
+        # ponytail: hotplugged monitors get a window; unplugged ones close with their monitor.
+        monitors.connect("items-changed", lambda ms, pos, removed, added: [window(ms.get_item(pos + i)) for i in range(added)])
+
+    app = Gtk.Application(application_id="org.asciipaper.wallpaper")
+    app.connect("activate", activate)
+    app.run(None)
 
 
 def main():
@@ -95,6 +119,7 @@ def main():
     elif args[:1] == ["set"]:
         if len(args) != 2:
             sys.exit(__doc__)
+        resolve(args[1])
         CONFIG.parent.mkdir(parents=True, exist_ok=True)
         CONFIG.write_text(args[1] + "\n")
         subprocess.run(["systemctl", "--user", "restart", "asciipaper.service"])

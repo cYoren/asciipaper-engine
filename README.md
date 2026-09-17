@@ -1,8 +1,10 @@
 # asciipaper
 
-Live ASCII wallpapers for [Omarchy](https://omarchy.org) and Arch Linux (Hyprland / any wlroots-style Wayland compositor with layer-shell).
+Live, animated, mouse-interactive **ASCII wallpapers** for [Omarchy](https://omarchy.org), Arch Linux and any Wayland compositor with layer-shell (Hyprland, Sway, river, niri…).
 
-Any web page — a preset, a URL, or a local `.html` — rendered GPU-accelerated in WebKitGTK and pinned to the desktop **background layer** with [gtk4-layer-shell](https://github.com/wmww/gtk4-layer-shell). Pointer-interactive, isolated from the shell (can't crash it), runs as a systemd user service.
+Any web page — a preset, a URL, or a local `.html` — rendered GPU-accelerated in WebKitGTK and pinned to the desktop **background layer** of every monitor with [gtk4-layer-shell](https://github.com/wmww/gtk4-layer-shell). Pointer events reach the page when the cursor is over the bare desktop, so wallpapers react to the mouse. Isolated from the shell (can't crash it), idles when covered by windows, runs as a systemd user service.
+
+Ships with an offline, 1:1 port of the [asciify.org Fluid background](https://asciify.org/docs/backgrounds/fluid).
 
 ## Install
 
@@ -10,7 +12,7 @@ Any web page — a preset, a URL, or a local `.html` — rendered GPU-accelerate
 git clone https://github.com/cYoren/asciipaper && cd asciipaper && ./install.sh
 ```
 
-Deps (Arch): `webkit2gtk-4.1 python-gobject gtk4-layer-shell`.
+Deps (Arch): `webkitgtk-6.0 python-gobject gtk4-layer-shell`. Remove with `./install.sh uninstall`.
 
 ## Use
 
@@ -45,8 +47,10 @@ Edit `PRESETS` in `asciipaper`: `name: (url, selector)`. The selector (optional)
 
 ## Notes
 
-- Single window, anchored to all edges — on multi-monitor setups it lands on the focused output. Set `LAYER_OUTPUT` if you need to pin it (see gtk4-layer-shell docs).
-- Uses the compositor's `background` layer, so it sits under Omarchy's shell, bars and windows.
+- One full-screen surface per monitor; monitors plugged in later get one too.
+- Uses the compositor's `background` layer, so it sits under Omarchy's shell, bars and windows. When fully covered, WebKit stops rendering, so it costs ~0 CPU while you work.
+- Omarchy theme changes don't touch it; `asciipaper set …` is the only knob.
+- For AI agents: see [`skills/asciipaper/SKILL.md`](skills/asciipaper/SKILL.md) — install with `npx skills add cYoren/asciipaper`.
 
 ## Credits
 

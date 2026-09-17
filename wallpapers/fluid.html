@@ -11,7 +11,7 @@
 // Knobs: OPTIONS below (fontSize, charset, accentColor); MAX_GLYPHS caps density.
 import { DEFAULT_OPTIONS, imageToAsciiFrame, renderFrameToCanvas } from './lib/asciify-core.js';
 
-const MAX_GLYPHS = 26e3;
+const MAX_GLYPHS = 26e3, FPS = 30;
 const OPTIONS = { ...DEFAULT_OPTIONS, fontSize: 7, charAspect: .58, charset: ' .:+-=xICA$FY#@',
   colorMode: 'fullcolor', accentColor: '#e8b900', normalize: false, contrast: .1, hoverStrength: 0, chromaKey: null };
 
@@ -134,6 +134,8 @@ addEventListener('pointerleave', () => flow.leave());
 
 let last = 0, time = 12;
 function frame(now) {
+  requestAnimationFrame(frame);
+  if (now - last < 1000 / FPS - .5) return;
   const dt = last ? Math.min(.05, (now - last) / 1000) : 1 / 60; last = now; time += dt;
   flow.step(dt);
   paintLiquidSource(img.data, src.width, src.height, W / H, time, flow);
@@ -142,7 +144,6 @@ function frame(now) {
   const { frame } = imageToAsciiFrame(src, OPTIONS, W, H);
   x.setTransform(1, 0, 0, 1, 0, 0);
   renderFrameToCanvas(x, frame, OPTIONS, W, H, time, null);
-  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 </script>

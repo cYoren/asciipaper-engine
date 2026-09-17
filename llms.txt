@@ -1,0 +1,10 @@
+# asciipaper
+
+> Live, animated, mouse-interactive ASCII wallpapers for Omarchy, Arch Linux and Wayland compositors with layer-shell (Hyprland, Sway, niri). Any HTML page becomes a desktop background on every monitor.
+
+- Repo: https://github.com/cYoren/asciipaper
+- Install: `git clone https://github.com/cYoren/asciipaper && cd asciipaper && ./install.sh`
+- Use: `asciipaper set <fluid|flow|matrix|asciify|URL|file.html>`
+- Write a wallpaper: one self-contained .html with a full-viewport canvas, monospace fillText, requestAnimationFrame, pointermove handlers. See skills/asciipaper/SKILL.md.
+- Agent skill: `npx skills add cYoren/asciipaper`
+- Bundled: offline 1:1 port of asciify.org Fluid (asciify-engine, MIT).
