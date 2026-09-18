@@ -6,6 +6,10 @@ Any web page — a preset, a URL, or a local `.html` — rendered GPU-accelerate
 
 Ships with an offline, 1:1 port of the [asciify.org Fluid background](https://asciify.org/docs/backgrounds/fluid).
 
+![asciipaper running the Fluid wallpaper on the Omarchy desktop](assets/demo.gif)
+
+_[Full-quality demo (MP4)](assets/demo.mp4)_
+
 ## Install
 
 ```sh
