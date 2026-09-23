@@ -3,45 +3,30 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>My asciipaper wallpaper</title>
 <script src="./lib/asciipaper.js"></script>
-<style>
-  html, body { width:100%; height:100%; margin:0; overflow:hidden; background:#080909 }
-  canvas { display:block; width:100%; height:100% }
-</style>
-<canvas id="art"></canvas>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#080909}</style>
 <script>
-// Your canvas fills the screen and follows monitor size changes.
-const canvas = document.querySelector('#art');
-const ctx = canvas.getContext('2d');
-const glyphs = ' .,:;irsXA253hMHGS#9B&@';
-const MAX_GLYPHS = 1600, MAX_FPS = 12;
-let cols, rows, cell = 12, mouse = { x: .5, y: .5 }, lastFrame = 0;
-function resize() {
-  const dpr = Math.min(devicePixelRatio || 1, 1.5);
-  canvas.width = innerWidth * dpr; canvas.height = innerHeight * dpr;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  cell = Math.max(18, Math.sqrt(innerWidth * innerHeight / MAX_GLYPHS));
-  cols = Math.ceil(innerWidth / cell); rows = Math.ceil(innerHeight / cell);
-}
-addEventListener('resize', resize); resize();
-addEventListener('pointermove', e => { mouse.x = e.clientX / innerWidth; mouse.y = e.clientY / innerHeight; });
-
-function draw(time) {
-  requestAnimationFrame(draw);
-  const fps = Math.min(MAX_FPS, window.asciipaper?.options?.fps ?? MAX_FPS);
-  if (time - lastFrame < 1000 / fps) return;
-  lastFrame = time;
-  const w = innerWidth, h = innerHeight, t = time * .001;
-  ctx.fillStyle = '#080909'; ctx.fillRect(0, 0, w, h);
-  ctx.font = `${cell}px monospace`;
-  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
-    // Replace this example wave with any animation you can calculate per cell.
-    const u = x / cols, v = y / rows;
-    const pointer = window.asciipaper?.options?.pointer ?? 1;
-    const wave = Math.sin(u * 18 + t * 1.2 + mouse.x * 3 * pointer) + Math.cos(v * 14 - t + mouse.y * 4 * pointer);
-    const index = Math.max(0, Math.min(glyphs.length - 1, Math.floor((wave + 2) / 4 * glyphs.length)));
-    ctx.fillStyle = `hsl(${175 + wave * 16} 75% ${25 + (wave + 2) * 12}%)`;
-    ctx.fillText(glyphs[index], x * cell, y * cell);
-  }
-}
-requestAnimationFrame(draw);
+// Preview while you edit (reloads on save):  asciipaper preview "<this file>"
+//
+// cell(uv) runs on the GPU once per character cell. uv is the cell centre, 0..1 from the top left.
+// Return vec4(r, g, b, level): level 0..1 picks a glyph from `charset` (0 = first, 1 = last).
+// Built in: u_time (s), u_grid (cols, rows), u_size (px), u_aspect, u_pointer (0..1),
+// u_velocity, u_down, u_idle (s since the pointer moved), u_strength (pointer setting),
+// u_clicks[8] (x, y, age in s). Your own: declare `uniform float speed;` and set
+// scene.uniforms.speed in update(). Prefer JavaScript? Leave out glsl and call
+// scene.put(col, row, level, r, g, b) in update() instead.
+asciipaper.ascii({
+  charset: ' .,:;irsXA253hMHGS#9B&@',
+  cell: 12, aspect: .6, background: '#080909',
+  glsl: `
+vec4 cell(vec2 uv){
+  vec2 m=u_pointer*u_strength;
+  float wave=sin(uv.x*18.0+u_time*1.2+m.x*3.0)+cos(uv.y*14.0-u_time+m.y*4.0);
+  for(int i=0;i<8;i++){vec3 c=u_clicks[i];                        // clicks send out a ring
+    wave+=2.0*max(0.0,1.0-c.z)*smoothstep(0.03,0.0,abs(length((uv-c.xy)*vec2(u_aspect,1.0))-c.z*0.6));}
+  float level=clamp((wave+2.0)/4.0,0.0,1.0);
+  vec3 color=vec3(0.2,0.75,0.7)*(0.35+level*0.8);
+  return vec4(color,level);
+}`,
+  update(scene, dt) {},
+});
 </script>

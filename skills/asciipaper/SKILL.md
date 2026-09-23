@@ -19,28 +19,19 @@ asciipaper /path/to/wallpaper.html   # try a file without saving (Ctrl-C to stop
 
 ## Wallpaper contract
 
-Write one `.html` file that:
+Write one `.html` file that loads `./lib/asciipaper.js` and calls `asciipaper.ascii({...})`. See README "Write your own" for the full API. In short:
 
-1. Fills the viewport: `html,body{margin:0;height:100%;overflow:hidden;background:#080909}` and a `<canvas>` (or monospace `<pre>`) sized to `innerWidth × innerHeight`, re-sized on `resize`.
-2. Animates with `requestAnimationFrame` (24 fps is a good starting point) rather than an uncapped loop.
-3. Draws characters in a monospace font — that's what makes it ASCII. `ctx.fillText` is fine up to a few thousand glyphs; beyond that copy the WebGL glyph-atlas approach in `fluid.html`.
-4. Reacts to `pointermove` / `pointerdown` / `wheel` — they fire when the cursor is over the bare desktop. Keyboard never arrives (by design).
-5. Uses inline JS or bundled local assets. WebGL is available. No network needed.
-6. Loads `./lib/asciipaper.js` to get the portable performance/settings API in browsers and wallpaper hosts; the native engine supplies its current values.
+1. `glsl`: define `vec4 cell(vec2 uv)` returning `(r, g, b, level)`; `level` 0..1 picks a glyph from `charset`. Uniforms: `u_time u_grid u_size u_aspect u_pointer u_velocity u_down u_idle u_strength u_clicks[8]`, plus your own set via `scene.uniforms` in `update(scene, dt)`.
+2. Or no `glsl`: write cells on the CPU in `update` with `scene.put(col, row, level, r, g, b)`.
+3. Never throttle yourself: the engine paces `requestAnimationFrame` (fps / idleFps / paused behind fullscreen).
+4. Input is pointer only (`asciipaper.pointer` or DOM pointer events). No keyboard, no network.
 
-Reference implementations in `wallpapers/`:
-- `matrix.html` — 25-line minimum.
-- `yin-yang.html` — rotating taijitu, gently follows pointer position and ripples on click.
-- `starter.html` — create-your-own template with resize and pointer handling.
-- `flow.html` — ~90-line stable-fluids sim (inject → advect → project) with a character ramp and ambient drift.
-- `fluid.html` — Asciify's Fluid. Two WebGL fragment-shader passes render the image; JavaScript updates the small fluid field and uploads its pointer texture. It reuses GPU texture storage between frames.
+Reference implementations in `wallpapers/`: `starter.html` (template), `matrix.html` (pure shader), `yin-yang.html` (JS uniforms + shader), `flow.html` (CPU sim), `fluid.html` (shader + CPU field texture + asciify LUT).
 
 ## Test
 
-`asciipaper ./new.html` shows it live. Run it in a browser first for console errors. Prefer shader work for dense per-pixel effects. Lower frame rate or render quality when CPU or power use is high; GPU rendering still needs CPU time for simulation, data upload, and draw submission.
-
-Studio exposes live `fps`, `quality`, and `pointer` settings as `window.asciipaper.options`. Subscribe with `window.asciipaper.onChange(options => { ... })`. The engine caps `requestAnimationFrame` globally, scales `devicePixelRatio` for canvas sizing, and publishes pointer strength so each wallpaper can tune its interaction. Studio shows measured engine plus renderer CPU and suggests lower-cost settings when needed.
+`asciipaper preview ./new.html` opens a normal window that reloads on save and prints console errors (including shader compile errors) to the terminal.
 
 ## Contribute a preset
 
-Put the file in `wallpapers/`, add `"name": (f"file://{LOCAL}/name.html", None)` to `PRESETS` in `asciipaper`, mention it in README, PR.
+Put the file in `wallpapers/`, add `"name": f"file://{LOCAL}/name.html"` to `PRESETS` in `asciipaper`, mention it in README, PR.

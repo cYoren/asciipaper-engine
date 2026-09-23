@@ -5,6 +5,6 @@
 - Repo: https://github.com/cYoren/asciipaper
 - Install: `git clone https://github.com/cYoren/asciipaper && cd asciipaper && ./install.sh`
 - Use: `asciipaper set <fluid|flow|matrix|asciify|URL|file.html>`
-- Write a wallpaper: one self-contained .html with a full-viewport canvas, monospace fillText, requestAnimationFrame, pointermove handlers. See skills/asciipaper/SKILL.md.
+- Write a wallpaper: one .html that loads ./lib/asciipaper.js and calls asciipaper.ascii({glsl: "vec4 cell(vec2 uv){...}"}) — GPU-rendered glyph grid with pointer/click uniforms; or plain canvas. Preview with `asciipaper preview file.html`. See skills/asciipaper/SKILL.md.
 - Agent skill: `npx skills add cYoren/asciipaper`
 - Bundled: offline 1:1 port of asciify.org Fluid (asciify-engine, MIT).

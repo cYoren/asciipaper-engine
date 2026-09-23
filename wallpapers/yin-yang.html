@@ -3,94 +3,43 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cursor Yin Yang — asciipaper</title>
 <script src="./lib/asciipaper.js"></script>
-<style>
-  * { box-sizing: border-box }
-  html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #080909 }
-  canvas { display: block; width: 100%; height: 100% }
-</style>
-<canvas id="wallpaper" aria-label="A rotating ASCII yin-yang responsive to pointer movement"></canvas>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#080909}</style>
 <script>
-const canvas = document.querySelector('#wallpaper');
-const ctx = canvas.getContext('2d', { alpha: false });
-const chars = ' .,:;irsXA253hMHGS#9B&@';
-let width = 0, height = 0, cellW = 9, cellH = 15, columns = 0, rows = 0;
-let pointerX = .5, pointerY = .5, targetX = .5, targetY = .5;
-let angle = 0, last = 0, ripples = [];
-
-function resize() {
-  const dpr = Math.min(devicePixelRatio || 1, 1.5);
-  width = innerWidth; height = innerHeight;
-  canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.font = `${cellH}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
-  columns = Math.ceil(width / cellW); rows = Math.ceil(height / cellH);
-}
-addEventListener('resize', resize); resize();
-addEventListener('pointermove', e => { targetX = e.clientX / width; targetY = e.clientY / height; });
-addEventListener('pointerdown', e => {
-  targetX = e.clientX / width; targetY = e.clientY / height;
-  ripples.push({ x: targetX, y: targetY, born: performance.now() });
+// A rotating ASCII taijitu. JS eases the pointer and spins the emblem; the GPU shades every cell.
+// Clicks send a ring of dots through the field.
+const CHARS = ' .,:;irsXA253hMHGS#9B&@·';            // '·' (last) is only used by ripples
+let px = .5, py = .5, angle = 0;
+asciipaper.ascii({
+  charset: CHARS, cell: 9, aspect: 9 / 15, background: '#080909',
+  update(scene, dt) {
+    const p = asciipaper.pointer, strength = asciipaper.options.pointer;
+    px += ((p.inside ? p.x : .5) - px) * .08; py += ((p.inside ? p.y : .5) - py) * .08;
+    angle += dt * (.24 + Math.min(Math.hypot(px - .5, py - .5) * strength, .5) * .9);
+    // The emblem scales to the viewport. Pointer position gently pulls its axis.
+    scene.uniforms.radius = Math.max(30, Math.min(scene.width * .31, scene.height * .40));
+    scene.uniforms.center = [scene.width * (.5 + (px - .5) * .12 * strength), scene.height * (.5 + (py - .5) * .12 * strength)];
+    scene.uniforms.rot = angle + Math.atan2(py - .5, px - .5) * .10 * strength;
+  },
+  glsl: `uniform vec2 center;uniform float radius,rot;
+vec4 cell(vec2 uv){
+  vec2 s=uv*u_size-center;
+  float ca=cos(rot),sa=sin(rot);
+  vec2 q=vec2(s.x*ca+s.y*sa,-s.x*sa+s.y*ca)/radius;
+  float r=length(q);
+  float ring=0.0;
+  for(int i=0;i<8;i++){vec3 k=u_clicks[i];
+    if(k.z<1.3)ring=max(ring,(1.0-k.z/1.3)*step(abs(length((uv-k.xy)*u_size)-k.z*0.7*radius),5.0));}
+  if(ring>0.0)return vec4(vec3(143.0,230.0,218.0)/255.0*ring*0.7+0.1,1.0);
+  if(r>1.035)return vec4(0.0);
+  bool white=q.x-0.42*sin(3.14159265*q.y)<0.0;             // the S-shaped halves...
+  if(length(q-vec2(0.0,0.5))<0.14)white=false;               // ...and the two opposing dots
+  if(length(q+vec2(0.0,0.5))<0.14)white=true;
+  float grain=(sin(q.x*32.0+q.y*17.0)+cos(q.y*29.0-q.x*13.0))*0.5;
+  float shade=clamp(floor((r>0.92?0.55:0.58+grain*0.12)*22.0),0.0,22.0);
+  float glow=max(0.0,1.0-length(s/u_size)*2.3);
+  vec3 color=white?(vec3(196.0,208.0,206.0)+glow*vec3(59.0,47.0,49.0))/255.0
+                  :(vec3(30.0,91.0,91.0)+glow*vec3(24.0,55.0,55.0))/255.0;
+  return vec4(color,shade/23.0);
+}`,
 });
-addEventListener('pointerleave', () => { targetX = .5; targetY = .5; });
-
-function frame(now) {
-  requestAnimationFrame(frame);
-  if (now - last < 40) return; // 25 fps keeps a desktop wallpaper light
-  const dt = Math.min((now - last) / 1000 || .04, .08); last = now;
-  pointerX += (targetX - pointerX) * .08; pointerY += (targetY - pointerY) * .08;
-  const pointerStrength = window.asciipaper?.options?.pointer ?? 1;
-  const near = Math.hypot(pointerX - .5, pointerY - .5) * pointerStrength;
-  angle += dt * (.24 + Math.min(near, .5) * .9);
-  ctx.fillStyle = '#080909'; ctx.fillRect(0, 0, width, height);
-
-  // The emblem scales to the viewport. Pointer position gently pulls its axis.
-  const radius = Math.max(30, Math.min(width * .31, height * .40));
-  const cx = width * (.5 + (pointerX - .5) * .12 * pointerStrength);
-  const cy = height * (.5 + (pointerY - .5) * .12 * pointerStrength);
-  const pullAngle = Math.atan2(pointerY - .5, pointerX - .5) * .10 * pointerStrength;
-  const rot = angle + pullAngle;
-  const ca = Math.cos(rot), sa = Math.sin(rot);
-  const firstCol = Math.max(0, Math.floor((cx - radius * 1.04) / cellW));
-  const lastCol = Math.min(columns, Math.ceil((cx + radius * 1.04) / cellW));
-  const firstRow = Math.max(0, Math.floor((cy - radius * 1.04) / cellH));
-  const lastRow = Math.min(rows, Math.ceil((cy + radius * 1.04) / cellH));
-  for (let row = firstRow; row < lastRow; row++) for (let col = firstCol; col < lastCol; col++) {
-    const sx = col * cellW + cellW * .5 - cx, sy = row * cellH + cellH * .5 - cy;
-    const x = (sx * ca + sy * sa) / radius;
-    const y = (-sx * sa + sy * ca) / radius;
-    const r = Math.hypot(x, y);
-    if (r > 1.035) continue;
-
-    // S-shaped halves and the two opposing dots form the taijitu.
-    const side = x - .42 * Math.sin(Math.PI * y);
-    let white = side < 0;
-    if (Math.hypot(x, y - .5) < .14) white = false;
-    if (Math.hypot(x, y + .5) < .14) white = true;
-    const edge = r > .92;
-    const grain = (Math.sin(x * 32 + y * 17) + Math.cos(y * 29 - x * 13)) * .5;
-    const shade = Math.max(0, Math.min(chars.length - 1,
-      Math.floor((edge ? .55 : .58 + grain * .12) * (chars.length - 1))));
-    const glow = Math.max(0, 1 - Math.hypot(sx / width, sy / height) * 2.3);
-    ctx.fillStyle = white
-      ? `rgb(${Math.floor(196 + glow * 59)},${Math.floor(208 + glow * 47)},${Math.floor(206 + glow * 49)})`
-      : `rgb(${Math.floor(30 + glow * 24)},${Math.floor(91 + glow * 55)},${Math.floor(91 + glow * 55)})`;
-    ctx.fillText(chars[shade], col * cellW, row * cellH);
-  }
-
-  // Clicks send a subtle ring through the character field.
-  ripples = ripples.filter(r => now - r.born < 1300);
-  for (const ripple of ripples) {
-    const age = (now - ripple.born) / 1000;
-    const rr = age * .7, alpha = 1 - age / 1.3;
-    const px = ripple.x * width, py = ripple.y * height;
-    ctx.fillStyle = `rgba(143,230,218,${alpha * .7})`;
-    for (let i = 0; i < 70; i++) {
-      const a = i * Math.PI * 2 / 70;
-      const xx = px + Math.cos(a) * rr * radius, yy = py + Math.sin(a) * rr * radius;
-      if (xx > 0 && xx < width && yy > 0 && yy < height)
-        ctx.fillText('·', Math.round(xx / cellW) * cellW, Math.round(yy / cellH) * cellH);
-    }
-  }
-}
-requestAnimationFrame(frame);
 </script>

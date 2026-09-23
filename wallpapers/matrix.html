@@ -1,34 +1,31 @@
 <!doctype html>
 <meta charset="utf-8">
 <script src="./lib/asciipaper.js"></script>
-<style>html,body{margin:0;height:100%;overflow:hidden;background:#000}canvas{display:block}</style>
-<canvas id="c"></canvas>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#000}</style>
 <script>
-const c = document.getElementById('c'), x = c.getContext('2d');
-const chars = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉ0123456789ABCDEF';
-let cols, drops, size = 16, width = 0, height = 0;
-function reset() {
-  const quality = window.asciipaper?.options?.quality ?? 1;
-  width = c.width = Math.max(1, Math.round(innerWidth * quality));
-  height = c.height = Math.max(1, Math.round(innerHeight * quality));
-  c.style.width = '100vw'; c.style.height = '100vh';
-  cols = Math.ceil(width / size); drops = Array(cols).fill(0).map(() => Math.random() * -50);
-}
-addEventListener('resize', reset); reset();
-addEventListener('asciipaper-settings', reset);
-let last = 0;
-function draw(now) {
-  requestAnimationFrame(draw);
-  if (now - last < 50) return;
-  last = now;
-  x.fillStyle = 'rgba(0,0,0,0.08)'; x.fillRect(0, 0, width, height);
-  x.font = size + 'px monospace';
-  for (let i = 0; i < cols; i++) {
-    x.fillStyle = Math.random() < 0.05 ? '#cfc' : '#0f4';
-    x.fillText(chars[Math.random() * chars.length | 0], i * size, drops[i] * size);
-    if (drops[i] * size > height && Math.random() > 0.975) drops[i] = 0;
-    drops[i]++;
-  }
-}
-requestAnimationFrame(draw);
+// Digital rain, computed per cell on the GPU: each column's drop position is a function of time,
+// so there is no state to update. The rain brightens and scrambles near the pointer; clicks ripple.
+const CHARS = ' ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉ0123456789ABCDEF';
+asciipaper.ascii({
+  charset: CHARS, cell: 16, aspect: 1, background: '#000000', font: 'monospace',
+  glsl: `
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+vec4 cell(vec2 uv){
+  vec2 c=floor(uv*u_grid);                                  // column, row (row 0 = top)
+  float speed=5.0+hash(vec2(c.x,1.0))*9.0, len=6.0+hash(vec2(c.x,2.0))*22.0;
+  float span=u_grid.y+len+hash(vec2(c.x,3.0))*50.0;         // rows until this column's next drop
+  float d=mod(u_time*speed+hash(vec2(c.x,4.0))*span,span)-c.y;   // rows behind the drop's head
+  float b=d>=0.0&&d<len?1.0-d/len:0.0;
+  float near=u_strength*smoothstep(0.2,0.0,length((uv-u_pointer)*vec2(u_aspect,1.0)))*step(u_idle,2.0);
+  float ring=0.0;
+  for(int i=0;i<8;i++){vec3 k=u_clicks[i];
+    ring=max(ring,smoothstep(0.025,0.0,abs(length((uv-k.xy)*vec2(u_aspect,1.0))-k.z*0.5))*max(0.0,1.0-k.z/1.6));}
+  b=max(max(b,near*0.35),ring);
+  if(b<0.03)return vec4(0.0);
+  float flip=floor(u_time*(1.5+near*25.0)+hash(c)*9.0);     // glyphs change now and then, fast near the cursor
+  float glyph=1.0+floor(hash(c+flip*vec2(1.7,9.2))*${CHARS.length - 1}.0);
+  vec3 color=d>=0.0&&d<1.0?vec3(0.8,1.0,0.8):vec3(0.0,1.0,0.27)*b;
+  return vec4(color,glyph/${CHARS.length - 1}.0);
+}`,
+});
 </script>

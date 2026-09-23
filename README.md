@@ -38,28 +38,46 @@ The Studio lets you choose or import wallpapers, create an editable copy, and tu
 
 ## Write your own (or ask an AI to)
 
-A wallpaper starts as an `.html` file and may include bundled local assets. The contract:
+A wallpaper is an `.html` file plus any local assets. Any web page works, but `lib/asciipaper.js` gives you an ASCII engine: you write what each character cell looks like and it handles the grid, glyphs, GPU drawing, frame pacing and input.
 
-- Fill the viewport: `html,body{margin:0;height:100%;overflow:hidden}` and a `<canvas>` (or a monospace `<pre>`) sized to `innerWidth × innerHeight`; re-size on the `resize` event.
-- Animate with `requestAnimationFrame` or `setInterval`; draw characters with `ctx.fillText` in a monospace font (that's what makes it "ASCII").
-- It's **pointer-interactive**: `mousemove` / `pointerdown` / `wheel` fire when the cursor is over the bare desktop, so react to them (ripples, wake-up, parallax). Keyboard focus is off by design.
-- WebGL is on; no network needed for local files. Any JS the page needs must be inline or bundled — no build step, no server.
-- The engine exposes `window.asciipaper.options` (`fps`, `quality`, `pointer`) and `window.asciipaper.onChange(callback)`. The Studio applies these settings live. Its frame-rate cap also limits `requestAnimationFrame`; quality sets canvas pixel density, and pointer response is available to the wallpaper script. See `flow.html`, `fluid.html`, and `yin-yang.html` for examples.
-- These settings are optional: artwork should still animate and respond in a regular browser. Use Canvas 2D or WebGL and browser input events; keep Linux APIs out of wallpaper files.
+```html
+<script src="./lib/asciipaper.js"></script>
+<script>
+asciipaper.ascii({
+  charset: ' .:-=+*#%@', cell: 10, aspect: .6,        // glyphs, cell width in px, width/height
+  glsl: `vec4 cell(vec2 uv) {                          // runs on the GPU for every cell
+    float d = length((uv - u_pointer) * vec2(u_aspect, 1.0));
+    float level = 0.5 + 0.5 * sin(d * 30.0 - u_time * 3.0);
+    return vec4(0.2, 0.8, 0.7, level);                 // rgb, and level 0..1 picks the glyph
+  }`,
+});
+</script>
+```
 
-`wallpapers/flow.html` is the reference: a small stable-fluids simulation (inject → advect → pressure-project) drawn as a character ramp, with ambient drift so it moves without a cursor. It runs its simulation and character drawing on the CPU, so it is the heavier example. `yin-yang.html` shows a rotating emblem that leans toward the pointer and ripples on click. `matrix.html` is the minimal example. `fluid.html` is the bundled Asciify Fluid renderer: its fragment shaders draw the image on the GPU, while JavaScript advances the small fluid field and uploads pointer data to a reusable texture. The bundled asciify engine (`lib/asciify-core.js`) is available to local wallpapers via `import … from './lib/asciify-core.js'`.
+- **GPU mode** (`glsl`): `cell(uv)` gets the cell centre (0..1, top left). Built in: `u_time`, `u_grid` (cols, rows), `u_size` (px), `u_aspect`, `u_pointer`, `u_velocity`, `u_down`, `u_idle` (seconds since the pointer moved), `u_strength` (pointer setting), `u_clicks[8]` (x, y, age). Declare your own `uniform`s and set them in `update(scene, dt)` via `scene.uniforms.name = value`, or pass textures with `scene.texture(name, w, h, rgbaBytes)`.
+- **CPU mode** (no `glsl`): write cells in `update(scene, dt)` with `scene.put(col, row, level, r, g, b)`; the engine uploads and draws them. Good for simulations and games (`flow.html`).
+- Other options: `font`, `background`, `maxCells`, `lut` (256 glyph indices for an exact brightness ramp), `time`/`period` (time wraps every `period` seconds so floats stay precise), `resize(scene)`, `canvas`.
+- Input: `asciipaper.pointer` (`x`, `y`, `vx`, `vy`, `down`, `inside`, `clicks`), or plain DOM events (`pointermove`, `pointerdown`, `wheel`) which fire when the cursor is over the bare desktop. Keyboard never arrives, by design.
+- Settings: `asciipaper.options` (`fps`, `idleFps`, `quality`, `pointer`, `paused`) and `asciipaper.onChange(callback)`. You don't need to throttle anything: the engine paces every `requestAnimationFrame` on the page, at `fps` while the pointer is active, `idleFps` otherwise, and stops entirely while a fullscreen window covers that monitor (Hyprland).
+- Plain Canvas/WebGL/CSS pages still work and get the same pacing. Keep Linux APIs out of wallpaper files; they also run in a regular browser and in Lively on Windows.
 
-Run `asciipaper create aurora`, then edit the new HTML under `~/.local/share/asciipaper/user-wallpapers/aurora.html`. It is a plain web page: replace the starter drawing with any canvas, CSS, JavaScript, or WebGL artwork. Listen to `pointermove`, `pointerdown`, `wheel`, and `resize` to make it respond to the desktop. Preview with `asciipaper ~/.local/share/asciipaper/user-wallpapers/aurora.html`; save it as a named option with `asciipaper set aurora`. You can also point asciipaper at any `.html` file you already have.
+```sh
+asciipaper create aurora        # copy the starter to ~/.local/share/asciipaper/user-wallpapers/aurora.html
+asciipaper preview aurora       # normal window, reloads on every save, console output in the terminal
+asciipaper set aurora           # make it the wallpaper (it hot-reloads on save too)
+```
 
-Prompt that works: *"Write a single-file HTML live ASCII wallpaper for asciipaper: full-screen canvas, monospace fillText, animated with requestAnimationFrame, reacts to mousemove. Theme: ‹ocean waves›."*
+Examples in `wallpapers/`: `starter.html` (the template), `matrix.html` (stateless rain, pure shader), `yin-yang.html` (JS drives uniforms, shader draws), `flow.html` (CPU fluid sim), `fluid.html` (asciify's Fluid: shader plus a small CPU pointer field passed as a texture).
 
-## Tuning `fluid`
+Prompt that works: *"Write an asciipaper wallpaper: one HTML file that loads ./lib/asciipaper.js and calls asciipaper.ascii({glsl}) (see README). Theme: ‹ocean waves›, reacts to the pointer and clicks."*
 
-The image rendering runs in two GPU fragment-shader passes; JavaScript advances the small fluid field and sends it to a reused texture. The default profile is 24 fps at 0.85 render quality. Studio measures the app and WebKit renderer CPU use and offers lower frame rate/quality settings when load is high. The visual can still be GPU-bound on a weaker or software-rendered device, so use the meter and your machine's power use as a guide.
+## Performance
+
+Every preset draws through the GPU renderer, so the CPU only sets a few uniforms per frame. The defaults are 24 fps with the pointer on the desktop, 12 fps otherwise, render quality 1.0 (device pixels; above 1 supersamples), and no rendering behind fullscreen windows. Studio has sliders for each and shows measured CPU use.
 
 ## Add a preset
 
-Edit `PRESETS` in `asciipaper`: `name: (url, selector)`. The selector (optional) is the element to isolate — everything else on the page is removed so the canvas fills the screen.
+Put the file in `wallpapers/` and add `"name": f"file://{LOCAL}/name.html"` to `PRESETS` in `asciipaper`.
 
 ## Flathub
 

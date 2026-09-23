@@ -1,26 +1,18 @@
 <!doctype html>
 <meta charset="utf-8">
 <script src="./lib/asciipaper.js"></script>
-<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#080909}canvas{display:block;width:100vw;height:100vh}</style>
-<canvas id="c"></canvas>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#080909}</style>
 <script>
-// Offline interactive ASCII fluid. Stable-fluids style: inject → advect → project.
-// Knobs: CW/CH = cell px (bigger = faster, coarser). ITER = pressure solve iterations.
-// Four Jacobi passes keep the ambient flow smooth enough for a wallpaper at a much lower CPU cost.
-const CW = 10, CH = 16, ITER = 4, RAMP = ' .:-=+*#%@';
-const c = document.getElementById('c'), x = c.getContext('2d');
-let W, H, cols, rows, N, vx, vy, vx0, vy0, d, d0, p, div, colors = [];
-function reset() {
-  const quality = window.asciipaper?.options?.quality ?? 1;
-  W = c.width = Math.max(1, Math.round(innerWidth * quality));
-  H = c.height = Math.max(1, Math.round(innerHeight * quality));
-  cols = Math.ceil(W / CW); rows = Math.ceil(H / CH); N = cols * rows;
-  [vx, vy, vx0, vy0, d, d0, p, div] = Array.from({ length: 8 }, () => new Float32Array(N));
-  for (let i = 0; i < RAMP.length; i++) colors[i] = `hsl(165 70% ${25 + 55 * i / RAMP.length}%)`;
-  x.font = `${CH - 2}px monospace`; x.textBaseline = 'top';
-}
-addEventListener('resize', reset); reset();
-addEventListener('asciipaper-settings', reset);
+// Offline interactive ASCII fluid. Stable-fluids style: inject → advect → project, on the CPU;
+// lib/asciipaper.js turns the density grid into glyphs on the GPU.
+// Knobs: cell/aspect below = glyph cell (bigger = faster, coarser). ITER = pressure solve iterations.
+const ITER = 4, RAMP = ' .:-=+*#%@';
+let cols, rows, N, vx, vy, vx0, vy0, d, d0, p, div;
+const colors = [...RAMP].map((_, i) => {         // hsl(165 70% 25..80%) → rgb 0..1
+  const l = .25 + .55 * i / RAMP.length, a = .7 * Math.min(l, 1 - l);
+  const f = n => { const k = (n + 165 / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+  return [f(0), f(8), f(4)];
+});
 
 const I = (i, j) => i + j * cols;
 function sample(f, fx, fy) {                       // bilinear
@@ -57,37 +49,32 @@ function splat(cx, cy, fx, fy, dens, r) {
     }
 }
 
-let mx = -1, my = -1, pmx = -1, pmy = -1;
-function pointerCell(e) {
-  const quality = window.asciipaper?.options?.quality ?? 1;
-  return [e.clientX * quality / CW, e.clientY * quality / CH];
-}
-addEventListener('pointermove', e => { [mx, my] = pointerCell(e); });
-addEventListener('pointerdown', e => { const [px, py] = pointerCell(e); splat(px, py, 0, 0, 1.5, 8); });
+let t = 0, mx = -1, my = -1, pmx = -1, pmy = -1;
+addEventListener('pointermove', e => { mx = e.clientX / innerWidth * cols; my = e.clientY / innerHeight * rows; });
+addEventListener('pointerdown', e => splat(e.clientX / innerWidth * cols, e.clientY / innerHeight * rows, 0, 0, 1.5, 8));
 
-let t = 0;
-function step() {
-  t += 0.016;
-  const pointerStrength = window.asciipaper?.options?.pointer ?? 1;
-  if (mx >= 0 && pmx >= 0) splat(mx, my, (mx - pmx) * 0.6 * pointerStrength, (my - pmy) * 0.6 * pointerStrength, 0.35 * pointerStrength, 4);
-  pmx = mx; pmy = my;
-  for (let s = 0; s < 3; s++) {                    // ambient drift so it lives without a cursor
-    const a = t * 0.25 + s * 2.1, cx = cols * (0.5 + 0.35 * Math.cos(a + s)), cy = rows * (0.5 + 0.35 * Math.sin(a * 0.7));
-    splat(cx, cy, -Math.sin(a) * 0.15, Math.cos(a) * 0.15, 0.03, 6);
-  }
-  vx0.set(vx); vy0.set(vy); advect(vx, vx0, 0.995); advect(vy, vy0, 0.995);
-  project();
-  vx0.set(vx); vy0.set(vy); d0.set(d); advect(d, d0, 0.985);
-
-  x.fillStyle = '#080909'; x.fillRect(0, 0, W, H);
-  let last = -1;
-  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
-    const v = d[I(i, j)]; if (v < 0.03) continue;
-    const l = Math.min(RAMP.length - 1, v * RAMP.length | 0);
-    if (l !== last) x.fillStyle = colors[last = l];
-    x.fillText(RAMP[l], i * CW, j * CH);
-  }
-  requestAnimationFrame(step);
-}
-step();
+asciipaper.ascii({
+  charset: RAMP, cell: 10, aspect: 10 / 16, background: '#080909',
+  resize(scene) {
+    cols = scene.cols; rows = scene.rows; N = cols * rows;
+    [vx, vy, vx0, vy0, d, d0, p, div] = Array.from({ length: 8 }, () => new Float32Array(N));
+  },
+  update(scene) {
+    t += 0.016;
+    const strength = asciipaper.options.pointer;
+    if (mx >= 0 && pmx >= 0) splat(mx, my, (mx - pmx) * 0.6 * strength, (my - pmy) * 0.6 * strength, 0.35 * strength, 4);
+    pmx = mx; pmy = my;
+    for (let s = 0; s < 3; s++) {                    // ambient drift so it lives without a cursor
+      const a = t * 0.25 + s * 2.1, cx = cols * (0.5 + 0.35 * Math.cos(a + s)), cy = rows * (0.5 + 0.35 * Math.sin(a * 0.7));
+      splat(cx, cy, -Math.sin(a) * 0.15, Math.cos(a) * 0.15, 0.03, 6);
+    }
+    vx0.set(vx); vy0.set(vy); advect(vx, vx0, 0.995); advect(vy, vy0, 0.995);
+    project();
+    vx0.set(vx); vy0.set(vy); d0.set(d); advect(d, d0, 0.985);
+    for (let k = 0; k < N; k++) {
+      const v = d[k], l = v < 0.03 ? 0 : Math.min(RAMP.length - 1, v * RAMP.length | 0), c = colors[l];
+      scene.put(k % cols, k / cols | 0, l / (RAMP.length - 1), c[0], c[1], c[2]);
+    }
+  },
+});
 </script>

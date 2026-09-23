@@ -12,14 +12,20 @@ Usage:
   asciipaper set fluid       save the choice and restart the service
   asciipaper list            list presets
   asciipaper create NAME     copy the editable HTML starter into your library
+  asciipaper preview NAME    open a wallpaper in a normal window; reloads when you save
+  asciipaper export lively NAME [OUTPUT.zip]  package HTML for Windows Lively
 """
 import os
 import json
+import socket
+import threading
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
+import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -28,6 +34,7 @@ from urllib.parse import unquote, urlparse
 FLATPAK = os.environ.get("FLATPAK_ID") == "io.github.cyoren.asciipaper"
 PRELOAD = ("/app/lib/libgtk4-layer-shell.so.0" if FLATPAK else
            "/usr/lib/libgtk4-layer-shell.so")
+MESA_EGL = "/usr/share/glvnd/egl_vendor.d/50_mesa.json"
 CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "asciipaper/wallpaper"
 SOURCE_WALLPAPERS = Path(__file__).resolve().parent / "wallpapers"
 LOCAL = (Path("/app/share/asciipaper/wallpapers") if FLATPAK else
@@ -37,58 +44,23 @@ USER_WALLPAPERS = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/sha
 ENGINE_CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "asciipaper/engine.json"
 DEFAULT = "fluid"
 
-# name -> (url, css selector to isolate; None = show the page as-is)
 PRESETS = {
-    "fluid": (f"file://{LOCAL}/fluid.html", None),   # asciify's Fluid, offline port
-    "flow": (f"file://{LOCAL}/flow.html", None),
-    "matrix": (f"file://{LOCAL}/matrix.html", None),
-    "yin-yang": (f"file://{LOCAL}/yin-yang.html", None),
-    # This is the offline, GPU rendered port of asciify.org's Fluid background.
-    "asciify": (f"file://{LOCAL}/fluid.html", None),
+    "fluid": f"file://{LOCAL}/fluid.html",   # asciify's Fluid, offline port
+    "flow": f"file://{LOCAL}/flow.html",
+    "matrix": f"file://{LOCAL}/matrix.html",
+    "yin-yang": f"file://{LOCAL}/yin-yang.html",
+    "asciify": f"file://{LOCAL}/fluid.html",  # alias
 }
 
-ENGINE_DEFAULTS = {"fps": 24, "quality": 0.85, "pointer": 1.0}
+ENGINE_DEFAULTS = {"fps": 24, "idleFps": 12, "quality": 1.0, "pointer": 1.0}
 
-ENGINE_SCRIPT = r"""(() => {
-  const defaults = %s;
-  const old = window.asciipaper || {};
-  const state = Object.assign({}, defaults, old.options || {});
-  let last = 0;
-  let configuredDpr = null;
-  const realDpr = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio');
-  function apply(next) {
-    Object.assign(state, next || {});
-    state.fps = Math.max(5, Math.min(60, Number(state.fps) || 30));
-    state.quality = Math.max(.5, Math.min(1.5, Number(state.quality) || 1));
-    state.pointer = Math.max(0, Math.min(2, Number(state.pointer) || 0));
-    const base = realDpr && realDpr.get ? realDpr.get.call(window) : (realDpr && realDpr.value) || 1;
-    const dpr = Math.max(.5, Math.min(2, base * state.quality));
-    if (dpr !== configuredDpr) {
-      configuredDpr = dpr;
-      try { Object.defineProperty(window, 'devicePixelRatio', { configurable: true, get: () => configuredDpr }); } catch (_) {}
-      window.dispatchEvent(new Event('resize'));
-    }
-    api.options = state;
-    window.dispatchEvent(new CustomEvent('asciipaper-settings', {detail: {...state}}));
-  }
-  const originalRaf = window.requestAnimationFrame.bind(window);
-  window.requestAnimationFrame = callback => originalRaf(now => {
-    const interval = 1000 / state.fps;
-    if (now - last >= interval - 1) { last = now; callback(now); }
-    else window.requestAnimationFrame(callback);
-  });
-  const api = {options: state, set: apply, onChange(callback) {
-    window.addEventListener('asciipaper-settings', event => callback(event.detail));
-  }};
-  window.asciipaper = api;
-  window.__asciipaperApply = apply;
-  apply(state);
-})();"""
+# Wallpapers must never scroll; everything else about the page is the author's.
+CSS = "html, body { margin:0; overflow:hidden !important; }"
 
-CSS = """
-html, body { margin:0 !important; padding:0 !important; overflow:hidden !important; background:#080909 !important; }
-header, footer, nav, aside, .fluid-background-controls { display:none !important; }
-"""
+
+def engine_script(options):
+    """lib/asciipaper.js (frame pacing, pointer, settings, renderer) with the user's options."""
+    return f"window.__asciipaperOptions = {json.dumps(options)};\n" + (LOCAL / "lib/asciipaper.js").read_text()
 
 
 def load_engine_options():
@@ -104,7 +76,8 @@ def ensure_user_api():
     if source.is_file():
         destination = USER_WALLPAPERS / "lib/asciipaper.js"
         destination.parent.mkdir(parents=True, exist_ok=True)
-        if not destination.exists():
+        # Keep user wallpapers on the current runtime so they also work in a plain browser.
+        if not destination.exists() or destination.read_bytes() != source.read_bytes():
             shutil.copyfile(source, destination)
 
 
@@ -221,38 +194,116 @@ def copy_local_assets(source, destination_root):
             shutil.copy2(asset, destination)
 
 
-# Replace <body> with the selected element so only the canvas fills the screen.
-JS = """
-(function () {
-  var el = document.querySelector(%r);
-  if (el && document.body) {
-    document.body.replaceChildren(el);
-    el.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh';
-    var c = el.querySelector('canvas'); if (c) c.style.cssText = el.style.cssText;
-  }
-  window.dispatchEvent(new Event('resize'));
-})();
-"""
+def export_lively(target, destination=None):
+    """Package a local HTML wallpaper for Lively Wallpaper on Windows."""
+    url = resolve(target)
+    parsed = urlparse(url)
+    if parsed.scheme != "file":
+        sys.exit("asciipaper: Lively export requires a local HTML wallpaper")
+    source = Path(unquote(parsed.path)).resolve()
+    if not source.is_file():
+        sys.exit(f"asciipaper: wallpaper file not found: {source}")
+    name = re.sub(r"[^A-Za-z0-9 _-]", "", source.stem).strip() or "ASCII Wallpaper"
+    output = Path(destination).expanduser() if destination else Path.cwd() / f"{name}.lively.zip"
+    output = output.resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
 
+    lively_bridge = ("<script>" + engine_script(ENGINE_DEFAULTS) +
+                     "\nwindow.livelyPropertyListener = (name, value) => asciipaper.set({[name]: Number(value)});</script>")
+
+    with tempfile.TemporaryDirectory(prefix="asciipaper-lively-") as temporary:
+        root = Path(temporary)
+        html = source.read_text(encoding="utf-8")
+        head = re.search(r"<head\b[^>]*>", html, re.IGNORECASE)
+        doctype = re.search(r"<!doctype\b[^>]*>", html, re.IGNORECASE)
+        at = head.end() if head else doctype.end() if doctype else 0
+        html = html[:at] + lively_bridge + html[at:]
+        (root / "index.html").write_text(html, encoding="utf-8")
+
+        for asset in local_assets(source):
+            bundled = root / asset.relative_to(source.parent)
+            bundled.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(asset, bundled)
+
+        info = {"AppVersion": "2.0.7.0", "Title": name, "Thumbnail": None,
+                "Preview": None, "Desc": "Interactive ASCII wallpaper created with asciipaper.",
+                "Author": None, "License": "MIT", "Contact": None, "Type": 1,
+                "FileName": "index.html", "Arguments": None, "IsAbsolutePath": False}
+        (root / "LivelyInfo.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
+        properties = {
+            "fps": {"max": 60, "min": 10, "tick": 1, "text": "Frame rate", "type": "slider", "value": 24},
+            "idleFps": {"max": 60, "min": 1, "tick": 1, "text": "Frame rate when idle", "type": "slider", "value": 12},
+            "quality": {"max": 2, "min": 0.5, "tick": 0.1, "text": "Render quality", "type": "slider", "value": 1},
+            "pointer": {"max": 2, "min": 0, "tick": 0.1, "text": "Pointer response", "type": "slider", "value": 1},
+        }
+        (root / "LivelyProperties.json").write_text(json.dumps(properties, indent=2) + "\n", encoding="utf-8")
+        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for file in root.rglob("*"):
+                if file.is_file():
+                    archive.write(file, file.relative_to(root))
+    return output
 
 def resolve(target):
     if target in PRESETS:
         return PRESETS[target]
     if "://" in target:
-        return target, None
+        return target
     user_preset = USER_WALLPAPERS / f"{target}.html"
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _-]{0,47}", target) and user_preset.is_file():
-        return user_preset.resolve().as_uri(), None
+        return user_preset.resolve().as_uri()
     path = Path(target).expanduser().resolve()
     if not path.is_file():
         sys.exit(f"asciipaper: no such preset, URL or file: {target}\nPresets: {', '.join(PRESETS)}")
-    return path.as_uri(), None
+    return path.as_uri()
 
 
-def run(target, studio=False):
+HYPR = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "hypr" / os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "")
+# Hyprland events after which a monitor may have gained or lost a fullscreen window.
+HYPR_EVENTS = {"fullscreen", "workspace", "workspacev2", "focusedmon", "focusedmonv2", "openwindow", "closewindow",
+               "movewindow", "movewindowv2", "activespecial", "activespecialv2", "monitoradded", "monitoraddedv2"}
+
+
+def hyprland(request):
+    with socket.socket(socket.AF_UNIX) as s:
+        s.connect(str(HYPR / ".socket.sock"))
+        s.sendall(request.encode())
+        return json.loads(b"".join(iter(lambda: s.recv(65536), b"")))
+
+
+def fullscreen_monitors():
+    """Names of monitors whose active workspace shows a fullscreen window."""
+    full = {w["id"] for w in hyprland("j/workspaces") if w.get("hasfullscreen")}
+    return {m["name"] for m in hyprland("j/monitors") if m["activeWorkspace"]["id"] in full}
+
+
+def watch_hyprland(callback):
+    """Call callback (from a thread) after each relevant Hyprland event. No-op elsewhere."""
+    if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        return
+    def loop():
+        try:
+            with socket.socket(socket.AF_UNIX) as s:
+                s.connect(str(HYPR / ".socket2.sock"))
+                for line in s.makefile(encoding="utf-8", errors="replace"):
+                    if line.split(">>", 1)[0] in HYPR_EVENTS:
+                        callback()
+        except OSError:
+            pass
+    threading.Thread(target=loop, daemon=True).start()
+
+
+def run(target, studio=False, preview=False):
     resolve(target)
-    if os.environ.get("LD_PRELOAD") != PRELOAD and os.path.exists(PRELOAD):
-        os.execve(sys.executable, [sys.executable, *sys.argv], {**os.environ, "LD_PRELOAD": PRELOAD})
+    env = dict(os.environ)
+    if os.path.exists(PRELOAD):
+        env["LD_PRELOAD"] = PRELOAD
+    # On hybrid laptops glvnd picks NVIDIA first, which keeps the dGPU awake all day and copies every
+    # frame across GPUs. A wallpaper belongs on the integrated GPU; set the variable yourself to override.
+    if os.path.exists(MESA_EGL):
+        env.setdefault("__EGL_VENDOR_LIBRARY_FILENAMES", MESA_EGL)
+        env.setdefault("GDK_DISABLE", "vulkan")   # GTK would otherwise start Vulkan on every GPU, NVIDIA included
+    if env != os.environ:
+        os.execve(sys.executable, [sys.executable, *sys.argv], env)
     try:
         import gi
         gi.require_version("Gdk", "4.0")
@@ -264,26 +315,52 @@ def run(target, studio=False):
         sys.exit(f"asciipaper: {e}\nInstall: sudo pacman -S --needed webkitgtk-6.0 python-gobject gtk4-layer-shell")
 
     settings = WebKit.Settings(enable_webgl=True, hardware_acceleration_policy=WebKit.HardwareAccelerationPolicy.ALWAYS,
-                               allow_file_access_from_file_urls=True)
+                               allow_file_access_from_file_urls=True, enable_developer_extras=preview,
+                               enable_write_console_messages_to_stdout=preview)
     content = WebKit.UserContentManager()
     engine_options = {**ENGINE_DEFAULTS, **load_engine_options()}
     content.add_style_sheet(WebKit.UserStyleSheet(CSS, WebKit.UserContentInjectedFrames.ALL_FRAMES,
                                                   WebKit.UserStyleLevel.USER, None, None))
-    content.add_script(WebKit.UserScript.new(
-        ENGINE_SCRIPT % json.dumps(engine_options), WebKit.UserContentInjectedFrames.ALL_FRAMES,
-        WebKit.UserScriptInjectionTime.START, None, None))
 
-    views, selectors, started = [], {}, False
+    def inject_engine():
+        # Pages loaded later (preset switch, hot reload) start from the current options.
+        content.remove_all_scripts()
+        content.add_script(WebKit.UserScript.new(
+            engine_script(engine_options), WebKit.UserContentInjectedFrames.ALL_FRAMES,
+            WebKit.UserScriptInjectionTime.START, None, None))
+
+    inject_engine()
+    views, started = {}, False   # view -> monitor connector name
+    paused = set()
     layer_supported = Layer.is_supported()
+    watched = {"monitor": None, "pending": 0}
+
+    def js(view, code):
+        view.evaluate_javascript(code, -1, None, None, None, None, None)
+
+    def reload_views():
+        watched["pending"] = 0
+        for view in views:
+            view.reload()
+        return False
+
+    def watch_folder(url):
+        # Hot reload: saving the wallpaper (or anything beside it) reloads every view.
+        watched["monitor"] = None
+        if url.startswith("file://"):
+            monitor = Gio.File.new_for_uri(url).get_parent().monitor_directory(Gio.FileMonitorFlags.NONE, None)
+            def changed(*_):
+                if not watched["pending"]:
+                    watched["pending"] = GLib.timeout_add(250, reload_views)
+            monitor.connect("changed", changed)
+            watched["monitor"] = monitor
 
     def navigate(view, target):
-        url, selector = resolve(target)
-        selectors[view] = selector
-        view.load_uri(url)
+        view.load_uri(resolve(target))
 
     def set_target(target):
         nonlocal current_target
-        resolve(target)
+        watch_folder(resolve(target))
         current_target = target
         CONFIG.parent.mkdir(parents=True, exist_ok=True)
         CONFIG.write_text(target + "\n")
@@ -294,16 +371,33 @@ def run(target, studio=False):
         engine_options.update(options)
         ENGINE_CONFIG.parent.mkdir(parents=True, exist_ok=True)
         ENGINE_CONFIG.write_text(json.dumps(engine_options, indent=2) + "\n")
-        script = "window.__asciipaperApply && window.__asciipaperApply(%s);" % json.dumps(engine_options)
+        inject_engine()
         for view in views:
-            view.evaluate_javascript(script, -1, None, None, None, None, None)
+            js(view, f"window.asciipaper?.set({json.dumps(engine_options)})")
+
+    def refresh_paused():
+        """Stop rendering on monitors covered by a fullscreen window; resume when uncovered."""
+        try:
+            covered = fullscreen_monitors()
+        except (OSError, ValueError, KeyError, TypeError):
+            return False
+        for view, name in views.items():
+            if (name in covered) != (view in paused):
+                paused.symmetric_difference_update({view})
+                js(view, f"window.asciipaper?.set({{paused: {'true' if view in paused else 'false'}}})")
+        return False
+
+    def new_view(monitor_name):
+        view = WebKit.WebView(settings=settings, user_content_manager=content)
+        views[view] = monitor_name
+        navigate(view, current_target)
+        # A reloaded page starts unpaused; re-apply this monitor's state.
+        view.connect("load-changed", lambda v, e: e == WebKit.LoadEvent.FINISHED and v in paused
+                     and js(v, "window.asciipaper?.set({paused: true})"))
+        return view
 
     def window(monitor):
-        view = WebKit.WebView(settings=settings, user_content_manager=content)
-        views.append(view)
-        navigate(view, current_target)
-        view.connect("load-changed", lambda v, e: e == WebKit.LoadEvent.FINISHED and selectors.get(v)
-                     and v.evaluate_javascript(JS % selectors[v], -1, None, None, None, None, None))
+        view = new_view(monitor.get_connector())
         win = Gtk.Window(application=app, child=view)
         Layer.init_for_window(win)
         Layer.set_layer(win, Layer.Layer.BACKGROUND)
@@ -329,10 +423,18 @@ def run(target, studio=False):
             window(m)
         # Monitors connected later receive their own background surface.
         monitors.connect("items-changed", lambda ms, pos, removed, added: [window(ms.get_item(pos + i)) for i in range(added)])
+        refresh_paused()
+
+    def preview_window(app):
+        win = Gtk.Window(application=app, child=new_view(None), title=f"asciipaper preview: {current_target}")
+        win.set_default_size(1280, 720)
+        win.present()
 
     current_target = target
+    watch_folder(resolve(target))
+    watch_hyprland(lambda: GLib.idle_add(refresh_paused))
     studio_window_ref = None
-    app = Gtk.Application(application_id="io.github.cyoren.asciipaper",
+    app = Gtk.Application(application_id=None if preview else "io.github.cyoren.asciipaper",
                           flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
 
     def studio_window(app):
@@ -382,6 +484,9 @@ def run(target, studio=False):
         edit_button = Gtk.Button(label="Edit selected wallpaper")
         root.append(edit_button)
 
+        export_button = Gtk.Button(label="Export for Windows (Lively)…")
+        root.append(export_button)
+
         performance = Gtk.Frame(label="Engine controls")
         controls = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         controls.set_margin_top(8); controls.set_margin_bottom(8)
@@ -389,13 +494,17 @@ def run(target, studio=False):
         fps = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 10, 60, 1)
         fps.set_digits(0); fps.set_value(engine_options["fps"]); fps.set_hexpand(True)
         fps.set_tooltip_text("Maximum animation rate. Lower values reduce CPU use.")
-        quality = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0.5, 1.5, 0.1)
+        idle_fps = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 1, 60, 1)
+        idle_fps.set_digits(0); idle_fps.set_value(engine_options["idleFps"]); idle_fps.set_hexpand(True)
+        idle_fps.set_tooltip_text("Animation rate while the pointer is away from the desktop. Most of the day, this is the rate that matters.")
+        quality = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0.5, 2, 0.1)
         quality.set_digits(1); quality.set_value(engine_options["quality"]); quality.set_hexpand(True)
         quality.set_tooltip_text("Canvas pixel density. Lower values render fewer pixels.")
         pointer = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 2, 0.1)
         pointer.set_digits(1); pointer.set_value(engine_options["pointer"]); pointer.set_hexpand(True)
         pointer.set_tooltip_text("Pointer reaction strength for wallpapers that use the asciipaper settings API.")
         controls.append(Gtk.Label(label="Animation rate (frames per second)", xalign=0)); controls.append(fps)
+        controls.append(Gtk.Label(label="Animation rate when idle", xalign=0)); controls.append(idle_fps)
         controls.append(Gtk.Label(label="Rendering quality", xalign=0)); controls.append(quality)
         controls.append(Gtk.Label(label="Pointer response", xalign=0)); controls.append(pointer)
         performance.set_child(controls); root.append(performance)
@@ -424,7 +533,7 @@ def run(target, studio=False):
                 top = view.get_root()
                 if isinstance(top, Gtk.Window):
                     top.close()
-            views.clear()
+            views.clear(); paused.clear()
             started = False
             status.set_text("Wallpaper paused. Choose Apply wallpaper to start one again.")
 
@@ -436,10 +545,12 @@ def run(target, studio=False):
             picker.set_selected(presets.index(name))
 
         def options_changed(*_):
-            set_engine_options({"fps": round(fps.get_value()), "quality": round(quality.get_value(), 1),
+            set_engine_options({"fps": round(fps.get_value()), "idleFps": round(idle_fps.get_value()),
+                                "quality": round(quality.get_value(), 1),
                                 "pointer": round(pointer.get_value(), 1)})
 
         fps.connect("value-changed", options_changed)
+        idle_fps.connect("value-changed", options_changed)
         quality.connect("value-changed", options_changed)
         pointer.connect("value-changed", options_changed)
 
@@ -486,7 +597,9 @@ def run(target, studio=False):
             ensure_user_api()
             shutil.copyfile(LOCAL / "starter.html", destination)
             append_preset(name)
-            status.set_text(f"Created {name}. It is selected but not running. Choose Edit selected wallpaper to edit it, or Apply wallpaper when you are ready to preview it.")
+            set_target(name)
+            wallpaper_windows(app)
+            status.set_text(f"Created and applied {name}. Select it and choose Edit selected wallpaper to open it in your editor.")
 
         create_button.connect("clicked", create_wallpaper)
 
@@ -499,6 +612,24 @@ def run(target, studio=False):
             Gio.AppInfo.launch_default_for_uri(path.as_uri(), None)
 
         edit_button.connect("clicked", edit_selected)
+
+        def export_selected(*_):
+            selected_name = model.get_string(picker.get_selected())
+            chooser = Gtk.FileChooserNative.new("Export wallpaper for Lively", studio,
+                Gtk.FileChooserAction.SAVE, "Export", "Cancel")
+            chooser.set_current_name(f"{selected_name}.lively.zip")
+            def response(dialog, result):
+                if result == Gtk.ResponseType.ACCEPT:
+                    selected = dialog.get_file()
+                    try:
+                        output = export_lively(selected_name, selected.get_path())
+                        status.set_text(f"Exported {output}. Import the ZIP into Lively Wallpaper on Windows.")
+                    except (OSError, ValueError, RuntimeError) as error:
+                        status.set_text(f"Could not export wallpaper: {error}")
+                dialog.destroy()
+            chooser.connect("response", response); chooser.show()
+
+        export_button.connect("clicked", export_selected)
 
         def import_html(*_):
             chooser = Gtk.FileChooserNative.new("Import an HTML wallpaper", studio,
@@ -536,7 +667,9 @@ def run(target, studio=False):
 
     def command_line(app, command_line):
         args = command_line.get_arguments()[1:]
-        if studio or "--studio" in args:
+        if preview:
+            preview_window(app)
+        elif studio or "--studio" in args:
             wallpaper_windows(app)
             studio_window(app)
         else:
@@ -546,7 +679,7 @@ def run(target, studio=False):
             if args:
                 set_target(args[0])
             wallpaper_windows(app)
-        if not layer_supported and not studio and "--studio" not in args:
+        if not layer_supported and not studio and not preview and "--studio" not in args:
             app.quit()
         command_line.set_exit_status(0)
         return 0
@@ -572,6 +705,11 @@ def main():
         ensure_user_api()
         shutil.copyfile(LOCAL / "starter.html", destination)
         print(f"Created {destination}\nEdit the HTML, then preview it with: asciipaper '{destination}'\nSave it as a named wallpaper with: asciipaper set '{args[1]}'")
+    elif args[:2] == ["export", "lively"]:
+        if len(args) not in {3, 4}:
+            sys.exit("Usage: asciipaper export lively <preset-or-html-file> [output.zip]")
+        output = export_lively(args[2], args[3] if len(args) == 4 else None)
+        print(f"Created {output}\nImport this ZIP into Lively Wallpaper on Windows.")
     elif args[:1] == ["set"]:
         if len(args) != 2:
             sys.exit(__doc__)
@@ -582,6 +720,8 @@ def main():
             subprocess.run(["systemctl", "--user", "restart", "asciipaper.service"])
         else:
             print("Saved. Apply it with: flatpak kill io.github.cyoren.asciipaper, then launch asciipaper again.")
+    elif args[:1] == ["preview"] and len(args) == 2:
+        run(args[1], preview=True)
     elif args == ["--studio"]:
         run(CONFIG.read_text().strip() if CONFIG.exists() else DEFAULT, studio=True)
     elif not args:
