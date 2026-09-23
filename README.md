@@ -34,7 +34,7 @@ asciipaper set ~/my/rain.html   # any local file
 asciipaper create aurora        # copy a ready-to-edit wallpaper starter
 ```
 
-The Studio lets you choose or import wallpapers, create an editable copy, tune frame rate, render quality, and pointer response while the wallpaper is running, and tune frame rate, render quality, and pointer response. It reports CPU use for the engine and WebKit renderer processes and can apply lower-cost settings. All launches talk to one application instance, so changing presets replaces the current wallpaper instead of starting a second engine. `set` saves to `~/.config/asciipaper/wallpaper` and restarts the service on a native install. Run `asciipaper <target>` to switch the live wallpaper from the command line.
+The Studio lets you choose or import wallpapers, create an editable copy, and tune frame rate, render quality, and pointer response while the wallpaper is running. It reports CPU use for the engine and WebKit renderer processes and can apply lower-cost settings. All launches talk to one application instance, so changing presets replaces the current wallpaper instead of starting a second engine. `set` saves to `~/.config/asciipaper/wallpaper` and restarts the service on a native install. Run `asciipaper <target>` to switch the live wallpaper from the command line.
 
 ## Write your own (or ask an AI to)
 

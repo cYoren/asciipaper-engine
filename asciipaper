@@ -173,10 +173,10 @@ def local_assets(source):
         if current.suffix.lower() in {".html", ".htm"}:
             parser = _WallpaperAssets(); parser.feed(text)
             references.extend(parser.paths)
-            references.extend(re.findall(r"url\(['\"]?([^)'"]+)", text, re.IGNORECASE))
+            references.extend(re.findall(r"url\(['\"]?([^)'\"]+)", text, re.IGNORECASE))
             references.extend(re.findall(r"(?:\bfrom\s*|\bimport\s*\(?\s*)['\"]([^'\"]+)['\"]", text))
         elif current.suffix.lower() == ".css":
-            references.extend(re.findall(r"url\(['\"]?([^)'"]+)", text, re.IGNORECASE))
+            references.extend(re.findall(r"url\(['\"]?([^)'\"]+)", text, re.IGNORECASE))
             references.extend(re.findall(r"@import\s+['\"]([^'\"]+)", text, re.IGNORECASE))
         elif current.suffix.lower() in {".js", ".mjs"}:
             references.extend(re.findall(r"(?:\bfrom\s*|\bimport\s*\(?\s*)['\"]([^'\"]+)['\"]", text))
