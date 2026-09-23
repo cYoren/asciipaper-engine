@@ -1,21 +1,26 @@
 <!doctype html>
 <meta charset="utf-8">
-<style>html,body{margin:0;height:100%;overflow:hidden;background:#080909}canvas{display:block}</style>
+<script src="./lib/asciipaper.js"></script>
+<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#080909}canvas{display:block;width:100vw;height:100vh}</style>
 <canvas id="c"></canvas>
 <script>
 // Offline interactive ASCII fluid. Stable-fluids style: inject → advect → project.
 // Knobs: CW/CH = cell px (bigger = faster, coarser). ITER = pressure solve iterations.
-const CW = 10, CH = 16, ITER = 8, RAMP = ' .:-=+*#%@';
+// Four Jacobi passes keep the ambient flow smooth enough for a wallpaper at a much lower CPU cost.
+const CW = 10, CH = 16, ITER = 4, RAMP = ' .:-=+*#%@';
 const c = document.getElementById('c'), x = c.getContext('2d');
 let W, H, cols, rows, N, vx, vy, vx0, vy0, d, d0, p, div, colors = [];
 function reset() {
-  W = c.width = innerWidth; H = c.height = innerHeight;
+  const quality = window.asciipaper?.options?.quality ?? 1;
+  W = c.width = Math.max(1, Math.round(innerWidth * quality));
+  H = c.height = Math.max(1, Math.round(innerHeight * quality));
   cols = Math.ceil(W / CW); rows = Math.ceil(H / CH); N = cols * rows;
   [vx, vy, vx0, vy0, d, d0, p, div] = Array.from({ length: 8 }, () => new Float32Array(N));
   for (let i = 0; i < RAMP.length; i++) colors[i] = `hsl(165 70% ${25 + 55 * i / RAMP.length}%)`;
   x.font = `${CH - 2}px monospace`; x.textBaseline = 'top';
 }
 addEventListener('resize', reset); reset();
+addEventListener('asciipaper-settings', reset);
 
 const I = (i, j) => i + j * cols;
 function sample(f, fx, fy) {                       // bilinear
@@ -53,13 +58,18 @@ function splat(cx, cy, fx, fy, dens, r) {
 }
 
 let mx = -1, my = -1, pmx = -1, pmy = -1;
-addEventListener('pointermove', e => { mx = e.clientX / CW; my = e.clientY / CH; });
-addEventListener('pointerdown', e => splat(e.clientX / CW, e.clientY / CH, 0, 0, 1.5, 8));
+function pointerCell(e) {
+  const quality = window.asciipaper?.options?.quality ?? 1;
+  return [e.clientX * quality / CW, e.clientY * quality / CH];
+}
+addEventListener('pointermove', e => { [mx, my] = pointerCell(e); });
+addEventListener('pointerdown', e => { const [px, py] = pointerCell(e); splat(px, py, 0, 0, 1.5, 8); });
 
 let t = 0;
 function step() {
   t += 0.016;
-  if (mx >= 0 && pmx >= 0) splat(mx, my, (mx - pmx) * 0.6, (my - pmy) * 0.6, 0.35, 4);
+  const pointerStrength = window.asciipaper?.options?.pointer ?? 1;
+  if (mx >= 0 && pmx >= 0) splat(mx, my, (mx - pmx) * 0.6 * pointerStrength, (my - pmy) * 0.6 * pointerStrength, 0.35 * pointerStrength, 4);
   pmx = mx; pmy = my;
   for (let s = 0; s < 3; s++) {                    // ambient drift so it lives without a cursor
     const a = t * 0.25 + s * 2.1, cx = cols * (0.5 + 0.35 * Math.cos(a + s)), cy = rows * (0.5 + 0.35 * Math.sin(a * 0.7));

@@ -1,6 +1,7 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>asciify fluid</title>
+<script src="./lib/asciipaper.js"></script>
 <style>html,body{margin:0;height:100%;overflow:hidden;background:#080909}canvas{display:block}</style>
 <canvas id="c"></canvas>
 <script type="module">
@@ -14,7 +15,9 @@
 // SCALE = backing-buffer supersampling for smoother letters (GPU cost only).
 import { DEFAULT_OPTIONS, imageToAsciiFrame } from './lib/asciify-core.js';
 
-const MIN_FONT = 7, MAX_GLYPHS = 26e3, FPS = 24, SCALE = 2, PAD = 3;
+const MIN_FONT = 7, MAX_GLYPHS = 26e3, PAD = 3;
+let FPS = window.asciipaper?.options?.fps ?? 24;
+let SCALE = 2 * (window.asciipaper?.options?.quality ?? 1);
 const OPTIONS = { ...DEFAULT_OPTIONS, fontSize: 7, charAspect: .58, charset: ' .:+-=xICA$FY#@',
   colorMode: 'fullcolor', accentColor: '#e8b900', normalize: false, contrast: .1, hoverStrength: 0, chromaKey: null };
 const CHARS = OPTIONS.charset;
@@ -30,11 +33,12 @@ class FluidField {
     this.strokes = []; this.advected = [0, 0, 0]; this.previous = null; this.energy = 0;
   }
   get active() { return this.energy > .0005 || this.strokes.length > 0; }
-  move(x, y) {
+  move(x, y, strength = 1) {
     if (!Number.isFinite(x + y)) return;
     if (this.continuousWake && !this.previous) { this.previous = { x, y }; return; }
     const previous = this.previous ?? { x: x - .004, y: y - .001 };
-    const dx = Math.max(-.09, Math.min(.09, x - previous.x)), dy = Math.max(-.09, Math.min(.09, y - previous.y));
+    const dx = Math.max(-.09, Math.min(.09, (x - previous.x) * strength));
+    const dy = Math.max(-.09, Math.min(.09, (y - previous.y) * strength));
     this.previous = { x, y };
     if (Math.abs(dx) + Math.abs(dy) < .0001) return;
     const speed = Math.min(1, Math.hypot(dx * this.aspect, dy) * 25 + .06);
@@ -169,6 +173,9 @@ function reset() {
   cols = Math.floor(W / (fontSize * OPTIONS.charSpacing)); rows = Math.floor(H / (fontSize / OPTIONS.charAspect * OPTIONS.charSpacing));
   const aspect = W / H;
   flow = new FluidField(aspect); flowBytes = new Uint8Array(flow.columns * flow.rows * 3);
+  // Keep a fixed GPU allocation for pointer data; texSubImage2D below updates it in place.
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, flowTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, flow.columns, flow.rows, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
   gl.activeTexture(gl.TEXTURE0); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, cols, rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
   gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, cellsTex, 0);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -177,7 +184,13 @@ function reset() {
   buildAtlas(c.width / cols, c.height / rows);
 }
 addEventListener('resize', reset); reset();
-addEventListener('pointermove', e => flow.move(e.clientX / W, e.clientY / H));
+addEventListener('asciipaper-settings', event => {
+  FPS = event.detail.fps;
+  SCALE = 2 * event.detail.quality;
+  reset();
+});
+addEventListener('pointermove', e => flow.move(e.clientX / W, e.clientY / H,
+  window.asciipaper?.options?.pointer ?? 1));
 addEventListener('pointerleave', () => flow.leave());
 
 // FluidField.front is [dx, dy, ink] per cell; pack to bytes for the GPU (dx,dy ∈ ±.18, ink ∈ 0..8).
@@ -187,8 +200,9 @@ function uploadFlow() {
     flowBytes[i] = 127.5 + f[i] / .36 * 255; flowBytes[i + 1] = 127.5 + f[i + 1] / .36 * 255; flowBytes[i + 2] = f[i + 2] / .8 * 255;
   }
   gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, flowTex);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, flow.columns, flow.rows, 0, gl.RGB, gl.UNSIGNED_BYTE, flowBytes);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, flow.columns, flow.rows, gl.RGB, gl.UNSIGNED_BYTE, flowBytes);
 }
 
 let last = 0, time = 12;

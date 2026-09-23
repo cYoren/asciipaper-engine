@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=asciipaper
+Comment=Choose, create, and run interactive ASCII wallpapers
+Exec=asciipaper --studio
+Icon=io.github.cyoren.asciipaper
+Terminal=false
+Type=Application
+Categories=Utility;Graphics;
+Keywords=ASCII;wallpaper;Wayland;animated;
+StartupNotify=false

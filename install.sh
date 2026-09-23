@@ -14,5 +14,6 @@ install -Dm755 asciipaper ~/.local/bin/asciipaper
 mkdir -p ~/.local/share/asciipaper && cp -r wallpapers ~/.local/share/asciipaper/
 install -Dm644 asciipaper.service ~/.config/systemd/user/asciipaper.service
 systemctl --user daemon-reload
-systemctl --user enable --now asciipaper.service
+systemctl --user enable asciipaper.service
+systemctl --user restart asciipaper.service
 echo "asciipaper running. Change it with: asciipaper set <preset|url|file>"

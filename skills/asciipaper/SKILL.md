@@ -5,14 +5,15 @@ description: Create, test and install live animated ASCII wallpapers for Linux W
 
 # asciipaper
 
-asciipaper renders a single self-contained `.html` file on the desktop background layer of every monitor. A wallpaper is just that file. No build step, no framework, no server.
+asciipaper renders an `.html` wallpaper and its bundled local assets on the desktop background layer of every monitor. No build step, framework, or server is required.
 
 ## Install / run
 
 ```sh
 git clone https://github.com/cYoren/asciipaper && cd asciipaper && ./install.sh   # Arch: webkitgtk-6.0 python-gobject gtk4-layer-shell
-asciipaper list                      # presets: fluid, flow, matrix, asciify
+asciipaper list                      # presets: fluid, flow, matrix, yin-yang, asciify
 asciipaper set fluid                 # persist + restart service
+asciipaper create aurora             # create an editable animated HTML starter
 asciipaper /path/to/wallpaper.html   # try a file without saving (Ctrl-C to stop)
 ```
 
@@ -21,19 +22,24 @@ asciipaper /path/to/wallpaper.html   # try a file without saving (Ctrl-C to stop
 Write one `.html` file that:
 
 1. Fills the viewport: `html,body{margin:0;height:100%;overflow:hidden;background:#080909}` and a `<canvas>` (or monospace `<pre>`) sized to `innerWidth × innerHeight`, re-sized on `resize`.
-2. Animates with `requestAnimationFrame` (cap at ~30 fps to save CPU) or `setInterval`.
+2. Animates with `requestAnimationFrame` (24 fps is a good starting point) rather than an uncapped loop.
 3. Draws characters in a monospace font — that's what makes it ASCII. `ctx.fillText` is fine up to a few thousand glyphs; beyond that copy the WebGL glyph-atlas approach in `fluid.html`.
 4. Reacts to `pointermove` / `pointerdown` / `wheel` — they fire when the cursor is over the bare desktop. Keyboard never arrives (by design).
-5. Uses only inline JS or `import … from './lib/asciify-core.js'` (the MIT asciify-engine core, available to every wallpaper in `wallpapers/`). WebGL is available. No network needed.
+5. Uses inline JS or bundled local assets. WebGL is available. No network needed.
+6. Loads `./lib/asciipaper.js` to get the portable performance/settings API in browsers and wallpaper hosts; the native engine supplies its current values.
 
 Reference implementations in `wallpapers/`:
 - `matrix.html` — 25-line minimum.
+- `yin-yang.html` — rotating taijitu, gently follows pointer position and ripples on click.
+- `starter.html` — create-your-own template with resize and pointer handling.
 - `flow.html` — ~90-line stable-fluids sim (inject → advect → project) with a character ramp and ambient drift.
-- `fluid.html` — asciify.org's Fluid, fully on the GPU: pass 1 evaluates the liquid field + tint per cell and looks up the glyph in a 256-entry LUT the engine produced at startup; pass 2 draws a glyph atlas. JS per frame: step the small pointer field, two draw calls. ~5 % CPU at 1080p/24 fps — copy this structure for anything dense.
+- `fluid.html` — Asciify's Fluid. Two WebGL fragment-shader passes render the image; JavaScript updates the small fluid field and uploads its pointer texture. It reuses GPU texture storage between frames.
 
 ## Test
 
-`asciipaper ./new.html` shows it live. Run it in any browser first for console errors. Check CPU with `ps -eo %cpu,cmd | grep WebKitWebProcess`; WebKit's own floor is ~0.2 % per fps, so budget ≤ 5 % at 24 fps. Above that: move per-pixel work into a fragment shader (see `fluid.html`), raise the cell size, or lower the fps.
+`asciipaper ./new.html` shows it live. Run it in a browser first for console errors. Prefer shader work for dense per-pixel effects. Lower frame rate or render quality when CPU or power use is high; GPU rendering still needs CPU time for simulation, data upload, and draw submission.
+
+Studio exposes live `fps`, `quality`, and `pointer` settings as `window.asciipaper.options`. Subscribe with `window.asciipaper.onChange(options => { ... })`. The engine caps `requestAnimationFrame` globally, scales `devicePixelRatio` for canvas sizing, and publishes pointer strength so each wallpaper can tune its interaction. Studio shows measured engine plus renderer CPU and suggests lower-cost settings when needed.
 
 ## Contribute a preset
 
