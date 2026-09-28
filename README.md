@@ -75,6 +75,10 @@ Prompt that works: *"Write an asciipaper wallpaper: one HTML file that loads ./l
 
 Every preset draws through the GPU renderer, so the CPU only sets a few uniforms per frame. The defaults are 24 fps with the pointer on the desktop, 12 fps otherwise, render quality 1.0 (device pixels; above 1 supersamples), and no rendering behind fullscreen windows. Studio has sliders for each and shows measured CPU use.
 
+The built-in presets run on `asciipaper-engine` (`native/`, built by `install.sh`), a small C program that runs the same shaders through EGL and OpenGL ES without WebKit. It supports pointer and click effects, HiDPI and fractional scaling, and monitor hotplug, on any compositor with layer-shell. In one test it used under 1% CPU and about 110 MB for the matrix preset, where WebKit used 8% and around 1 GB. Your own HTML wallpapers and URLs still use WebKit. To run the built-in presets in WebKit too, add `"renderer": "web"` to `~/.config/asciipaper/engine.json`. The engine's shaders are copies of those in `wallpapers/*.html` (see `native/presets.c`), so edit both when you change a preset.
+
+WebKit applies the desktop's text-scaling factor as page zoom, so with text scaling above 1 the web versions draw larger characters than the native engine.
+
 ## Add a preset
 
 Put the file in `wallpapers/` and add `"name": f"file://{LOCAL}/name.html"` to `PRESETS` in `asciipaper`.

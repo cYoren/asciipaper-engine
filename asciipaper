@@ -1,8 +1,10 @@
 #!/usr/bin/python3
 """asciipaper — live ASCII wallpapers for Omarchy / Arch (Hyprland, Wayland).
 
-Renders any web page (a preset, a URL, or a local .html) in a WebKitGTK
-window pinned to the desktop background layer of every monitor.
+Renders any web page (a URL or a local .html) in a WebKitGTK window pinned to
+the desktop background layer of every monitor. The built-in presets run on
+asciipaper-engine (native/) instead when it is installed: the same shaders
+without WebKit, at a fraction of the memory and power.
 
 Usage:
   asciipaper                 run the wallpaper saved in ~/.config/asciipaper/wallpaper
@@ -52,7 +54,12 @@ PRESETS = {
     "asciify": f"file://{LOCAL}/fluid.html",  # alias
 }
 
-ENGINE_DEFAULTS = {"fps": 24, "idleFps": 12, "quality": 1.0, "pointer": 1.0}
+# Built-in presets that asciipaper-engine draws natively (wallpapers/*.html stay the web versions,
+# for preview, editing and Lively export). Set "renderer": "web" in engine.json to always use WebKit.
+NATIVE = {"fluid": "fluid", "asciify": "fluid", "flow": "flow", "matrix": "matrix", "yin-yang": "yin-yang"}
+SERVICE = "asciipaper.service"
+
+ENGINE_DEFAULTS = {"fps": 24, "idleFps": 12, "quality": 1.0, "pointer": 1.0, "renderer": "native"}
 
 # Wallpapers must never scroll; everything else about the page is the author's.
 CSS = "html, body { margin:0; overflow:hidden !important; }"
@@ -292,8 +299,65 @@ def watch_hyprland(callback):
     threading.Thread(target=loop, daemon=True).start()
 
 
+def engine_binary():
+    """asciipaper-engine beside this script (a source checkout) or on PATH, if built."""
+    local = Path(__file__).resolve().parent / "native/asciipaper-engine"
+    return str(local) if os.access(local, os.X_OK) else shutil.which("asciipaper-engine")
+
+
+def uses_engine(target):
+    return (target in NATIVE and not FLATPAK and bool(engine_binary())
+            and {**ENGINE_DEFAULTS, **load_engine_options()}["renderer"] != "web")
+
+
+def engine_env():
+    # The gtk4-layer-shell preload is for GTK; the engine speaks layer-shell itself. Like WebKit,
+    # it belongs on the integrated GPU of a hybrid laptop (see run()).
+    env = {key: value for key, value in os.environ.items() if key != "LD_PRELOAD"}
+    if os.path.exists(MESA_EGL):
+        env.setdefault("__EGL_VENDOR_LIBRARY_FILENAMES", MESA_EGL)
+    return env
+
+
+def start_engine(target):
+    """Start asciipaper-engine; write pause lines to its stdin (see pause_line)."""
+    return subprocess.Popen([engine_binary(), NATIVE[target]], stdin=subprocess.PIPE, text=True, bufsize=1, env=engine_env())
+
+
+def pause_line(engine, covered):
+    try:
+        engine.stdin.write("pause " + " ".join(sorted(covered)) + "\n")
+    except (OSError, ValueError):
+        pass   # the engine exited; its owner notices
+
+
+def service_elsewhere():
+    """True when the systemd service is running and this process is not it."""
+    return (not FLATPAK and "INVOCATION_ID" not in os.environ and
+            subprocess.run(["systemctl", "--user", "is-active", "--quiet", SERVICE]).returncode == 0)
+
+
+def run_native(target):
+    """The service with a native preset: just the engine, plus fullscreen pausing on Hyprland."""
+    if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        os.execve(engine_binary(), [engine_binary(), NATIVE[target]], engine_env())   # nothing else to do; no Python left running
+    engine = start_engine(target)
+    def refresh():
+        try:
+            pause_line(engine, fullscreen_monitors())
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+    refresh()
+    watch_hyprland(refresh)
+    sys.exit(engine.wait())
+
+
 def run(target, studio=False, preview=False):
     resolve(target)
+    if not studio and not preview and uses_engine(target):
+        if "INVOCATION_ID" not in os.environ and service_elsewhere():
+            return set_wallpaper(target)   # switch the running service instead of stacking a second wallpaper
+        return run_native(target)
     env = dict(os.environ)
     if os.path.exists(PRELOAD):
         env["LD_PRELOAD"] = PRELOAD
@@ -331,6 +395,7 @@ def run(target, studio=False, preview=False):
 
     inject_engine()
     views, started = {}, False   # view -> monitor connector name
+    engine = {"process": None, "target": None}   # a native wallpaper hosted by this process
     paused = set()
     layer_supported = Layer.is_supported()
     watched = {"monitor": None, "pending": 0}
@@ -381,6 +446,8 @@ def run(target, studio=False, preview=False):
             covered = fullscreen_monitors()
         except (OSError, ValueError, KeyError, TypeError):
             return False
+        if engine["process"]:
+            pause_line(engine["process"], covered)
         for view, name in views.items():
             if (name in covered) != (view in paused):
                 paused.symmetric_difference_update({view})
@@ -425,6 +492,45 @@ def run(target, studio=False, preview=False):
         monitors.connect("items-changed", lambda ms, pos, removed, added: [window(ms.get_item(pos + i)) for i in range(added)])
         refresh_paused()
 
+    def close_views():
+        nonlocal started
+        for view in list(views):
+            top = view.get_root()
+            if isinstance(top, Gtk.Window):
+                top.close()
+        views.clear(); paused.clear()
+        started = False
+
+    def stop_engine():
+        if engine["process"]:
+            engine["process"].terminate(); engine["process"].wait()
+            engine["process"] = engine["target"] = None
+            app.release()
+
+    def show_wallpaper(app):
+        """Show current_target: on the native engine for built-in presets, in WebKit otherwise."""
+        native = uses_engine(current_target)
+        if service_elsewhere():
+            # The service is drawing a native preset (a WebKit service would host this Studio).
+            if native:
+                close_views(); stop_engine()
+                subprocess.run(["systemctl", "--user", "restart", SERVICE])
+                return
+            subprocess.run(["systemctl", "--user", "stop", SERVICE])
+        if not native:
+            stop_engine()
+            wallpaper_windows(app)
+            return
+        close_views()
+        if engine["target"] == NATIVE[current_target] and engine["process"].poll() is None:
+            return
+        stop_engine()
+        if not layer_supported:
+            return
+        engine["process"], engine["target"] = start_engine(current_target), NATIVE[current_target]
+        app.hold()   # keep running with no windows while the engine draws
+        refresh_paused()
+
     def preview_window(app):
         win = Gtk.Window(application=app, child=new_view(None), title=f"asciipaper preview: {current_target}")
         win.set_default_size(1280, 720)
@@ -466,7 +572,7 @@ def run(target, studio=False, preview=False):
         apply_button.set_sensitive(layer_supported)
         def apply_selected(*_):
             set_target(model.get_string(picker.get_selected()))
-            wallpaper_windows(app)
+            show_wallpaper(app)
             status.set_text("Wallpaper applied to your monitors.")
 
         apply_button.connect("clicked", apply_selected)
@@ -528,13 +634,9 @@ def run(target, studio=False, preview=False):
         studio.set_child(scroller)
 
         def pause_wallpaper(*_):
-            nonlocal started
-            for view in list(views):
-                top = view.get_root()
-                if isinstance(top, Gtk.Window):
-                    top.close()
-            views.clear(); paused.clear()
-            started = False
+            close_views(); stop_engine()
+            if service_elsewhere():
+                subprocess.run(["systemctl", "--user", "stop", SERVICE])
             status.set_text("Wallpaper paused. Choose Apply wallpaper to start one again.")
 
         stop_button.connect("clicked", pause_wallpaper)
@@ -569,7 +671,11 @@ def run(target, studio=False, preview=False):
 
         def refresh_cpu():
             nonlocal cpu_baseline
-            cpu, cpu_baseline = app_process_cpu(os.getpid(), cpu_baseline)
+            root = os.getpid()
+            if not views and not engine["process"] and service_elsewhere():   # the service draws; measure it
+                root = int(subprocess.run(["systemctl", "--user", "show", "-p", "MainPID", "--value", SERVICE],
+                                          capture_output=True, text=True).stdout.strip() or 0) or root
+            cpu, cpu_baseline = app_process_cpu(root, cpu_baseline)
             latest_cpu[0] = cpu
             target_fps = min(engine_options["fps"], 18 if cpu > 35 else 20)
             target_quality = (max(0.5, round(engine_options["quality"] * 0.8, 1))
@@ -598,7 +704,7 @@ def run(target, studio=False, preview=False):
             shutil.copyfile(LOCAL / "starter.html", destination)
             append_preset(name)
             set_target(name)
-            wallpaper_windows(app)
+            show_wallpaper(app)
             status.set_text(f"Created and applied {name}. Select it and choose Edit selected wallpaper to open it in your editor.")
 
         create_button.connect("clicked", create_wallpaper)
@@ -655,7 +761,7 @@ def run(target, studio=False, preview=False):
                         copy_local_assets(source_path, USER_WALLPAPERS)
                         shutil.copy2(source_path, destination)
                         append_preset(name); set_target(name)
-                        wallpaper_windows(app)
+                        show_wallpaper(app)
                         status.set_text(f"Imported and applied {name}.")
                     except (GLib.Error, OSError, ValueError) as error:
                         status.set_text(f"Could not import file: {getattr(error, 'message', str(error))}")
@@ -670,7 +776,8 @@ def run(target, studio=False, preview=False):
         if preview:
             preview_window(app)
         elif studio or "--studio" in args:
-            wallpaper_windows(app)
+            if not service_elsewhere():
+                show_wallpaper(app)
             studio_window(app)
         else:
             # Gtk.Application forwards later CLI launches to this one running
@@ -678,7 +785,7 @@ def run(target, studio=False, preview=False):
             # competing background surface in a second process.
             if args:
                 set_target(args[0])
-            wallpaper_windows(app)
+            show_wallpaper(app)
         if not layer_supported and not studio and not preview and "--studio" not in args:
             app.quit()
         command_line.set_exit_status(0)
@@ -686,6 +793,15 @@ def run(target, studio=False, preview=False):
 
     app.connect("command-line", command_line)
     app.run(sys.argv)
+
+
+def set_wallpaper(target):
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG.write_text(target + "\n")
+    if not FLATPAK:
+        subprocess.run(["systemctl", "--user", "restart", SERVICE])
+    else:
+        print("Saved. Apply it with: flatpak kill io.github.cyoren.asciipaper, then launch asciipaper again.")
 
 
 def main():
@@ -714,12 +830,7 @@ def main():
         if len(args) != 2:
             sys.exit(__doc__)
         resolve(args[1])
-        CONFIG.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG.write_text(args[1] + "\n")
-        if not FLATPAK:
-            subprocess.run(["systemctl", "--user", "restart", "asciipaper.service"])
-        else:
-            print("Saved. Apply it with: flatpak kill io.github.cyoren.asciipaper, then launch asciipaper again.")
+        set_wallpaper(args[1])
     elif args[:1] == ["preview"] and len(args) == 2:
         run(args[1], preview=True)
     elif args == ["--studio"]:
