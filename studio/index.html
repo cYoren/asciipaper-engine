@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>asciipaper</title>
+<link rel="stylesheet" href="studio.css">
+<body>
+<header class="bar">
+  <div class="brand"><span class="logo" aria-hidden="true">▚</span> asciipaper</div>
+  <div class="actions">
+    <button id="pause" class="ghost" title="Pause or resume the wallpaper">Pause</button>
+    <button id="open-settings" class="ghost" title="Settings">Settings</button>
+  </div>
+</header>
+
+<main>
+  <section class="now">
+    <div class="preview"><iframe id="now-preview" title="Your wallpaper" tabindex="-1"></iframe></div>
+    <div class="now-text">
+      <p class="eyebrow">On your desktop</p>
+      <h1 id="now-name">…</h1>
+      <p id="now-hint" class="muted">Move your mouse over the desktop: it reacts. Click to send a ripple.</p>
+      <div class="row">
+        <button id="now-customize" class="primary" hidden>Customize</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="drop" class="create" tabindex="0">
+    <div>
+      <h2>Make your own</h2>
+      <p class="muted">Drop a picture, GIF or video here and it becomes a moving ASCII wallpaper.</p>
+    </div>
+    <div class="row">
+      <button id="add-file" class="primary">Choose a file…</button>
+      <button id="add-link">Paste a link…</button>
+      <button id="add-shader" class="ghost" title="For people who like to code: write a GLSL shader">Write a shader…</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wallpapers</h2>
+    <div id="gallery" class="gallery" role="list"></div>
+  </section>
+</main>
+
+<aside id="drawer" class="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <h2 id="drawer-title">Customize</h2>
+    <button id="drawer-close" class="ghost" aria-label="Close">Done</button>
+  </div>
+  <div class="preview small"><iframe id="drawer-preview" title="Preview" tabindex="-1"></iframe></div>
+  <div id="controls" class="controls"></div>
+  <div class="row end"><button id="drawer-delete" class="danger ghost">Delete this wallpaper</button></div>
+</aside>
+
+<dialog id="settings">
+  <form method="dialog">
+    <h2>Settings</h2>
+    <label class="switch-row"><span>Start with Windows<small>Your wallpaper comes back after you sign in</small></span><input type="checkbox" id="autostart"></label>
+    <label class="slider-row"><span>Frame rate<small>While your mouse is on the desktop</small></span><input type="range" id="fps" min="10" max="60" step="1"><output></output></label>
+    <label class="slider-row"><span>Idle frame rate<small>The rest of the time. Lower saves battery</small></span><input type="range" id="idleFps" min="1" max="60" step="1"><output></output></label>
+    <label class="slider-row"><span>Quality<small>Lower draws fewer pixels</small></span><input type="range" id="quality" min="0.5" max="2" step="0.1"><output></output></label>
+    <label class="slider-row"><span>Mouse response<small>How strongly wallpapers react</small></span><input type="range" id="pointer" min="0" max="2" step="0.1"><output></output></label>
+    <div class="row between">
+      <button type="button" id="open-folder" class="ghost">Open wallpaper folder</button>
+      <span id="version" class="muted"></span>
+      <button class="primary" value="close">Done</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="ask">
+  <form method="dialog">
+    <h2 id="ask-title"></h2>
+    <p id="ask-body" class="muted"></p>
+    <input id="ask-input" autocomplete="off" spellcheck="false">
+    <div class="row end"><button value="cancel" class="ghost">Cancel</button><button id="ask-ok" value="ok" class="primary">OK</button></div>
+  </form>
+</dialog>
+
+<div id="toasts" aria-live="polite"></div>
+<div id="thumbnailer" aria-hidden="true"></div>
+<script>if (/[?&]mock\b/.test(location.search)) document.write('<script src="mock.js"><\/script>')</script>
+<script src="studio.js"></script>
+</body>
+</html>

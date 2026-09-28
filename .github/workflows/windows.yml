@@ -1,0 +1,67 @@
+# Builds asciipaper for Windows, runs its self-test on real Windows (screenshots uploaded as
+# artifacts), builds the installer, and attaches it to GitHub releases for v* tags.
+name: Windows
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]   # 2025 has the Windows 11 24H2 desktop layout
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build
+        run: dotnet build windows/asciipaper.csproj -c Release
+
+      - name: Self-test
+        shell: pwsh
+        run: |
+          $out = Join-Path $PWD 'selftest'
+          $app = Start-Process windows/bin/Release/net48/asciipaper.exe -ArgumentList '--selftest', "`"$out`"" -PassThru
+          if (-not $app.WaitForExit(240000)) { $app.Kill(); Write-Host 'self-test timed out' }
+          Get-Content "$out/log.txt"
+          if (-not (Select-String -Path "$out/log.txt" -Pattern '^done$' -Quiet)) { exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selftest-${{ matrix.os }}
+          path: selftest
+
+      - name: Installer
+        if: matrix.os == 'windows-2022'
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content windows/asciipaper.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc "/DAppVersion=$version" windows/installer.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'windows-2022'
+        with:
+          name: installer
+          path: dist/*.exe
+
+      - name: Attach to release
+        if: matrix.os == 'windows-2022' && startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.exe

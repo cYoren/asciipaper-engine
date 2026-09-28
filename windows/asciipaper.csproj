@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- asciipaper for Windows: the wallpaper host and Studio. .NET Framework 4.8 and WebView2 ship
+       with Windows 10 and 11, so the app needs nothing else installed. Builds on Linux too
+       (EnableWindowsTargeting); run it on Windows. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>asciipaper</AssemblyName>
+    <RootNamespace>Asciipaper</RootNamespace>
+    <ApplicationIcon>asciipaper.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.1.0</Version>
+    <Product>asciipaper</Product>
+    <Company>cYoren</Company>
+    <Description>Live, interactive ASCII wallpapers</Description>
+    <Copyright>MIT License</Copyright>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Net.Http" />
+    <EmbeddedResource Include="asciipaper.ico" LogicalName="asciipaper.ico" />
+    <!-- The web side, copied next to the exe under web\ and served to WebView2 from one origin. -->
+    <Content Include="..\wallpapers\**\*" LinkBase="web\wallpapers" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\studio\**\*" Exclude="..\studio\mock.js" LinkBase="web\studio" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

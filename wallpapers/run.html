@@ -1,0 +1,11 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>asciipaper</title>
+<!-- Runs a wallpaper spec: run.html?spec=URL-of-the-.json (over http(s); the Windows app serves it). -->
+<script src="./lib/asciipaper.js"></script>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#000}</style>
+<script>
+const url = new URLSearchParams(location.search).get('spec');
+asciipaper.load(url).catch(error => { document.body.style.cssText += ';color:#f55;font:16px monospace;padding:2em'; document.body.textContent = String(error); });
+</script>

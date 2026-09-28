@@ -1,0 +1,213 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+
+namespace Asciipaper;
+
+// Where everything lives, and the user's wallpapers. All of it is served to WebView2 from one
+// origin, https://asciipaper.example/, mapped to Root:
+//   app\       the Studio and built-in wallpapers (copied from the install folder)
+//   library\   the user's wallpapers: NAME.json specs, shaders, media\, and HTML wallpapers
+//   thumbs\    thumbnails of the user's wallpapers
+static class Library
+{
+    public const string Host = "asciipaper.example", Origin = "https://" + Host;
+    public static readonly string Root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "asciipaper");
+    public static readonly string App = Path.Combine(Root, "app"), Folder = Path.Combine(Root, "library"),
+        Media = Path.Combine(Folder, "media"), Thumbs = Path.Combine(Root, "thumbs"), WebData = Path.Combine(Root, "webview");
+    public static readonly string[] Presets = { "fluid", "flow", "matrix", "yin-yang" };
+    static readonly Regex NameRe = new(@"^[A-Za-z0-9][A-Za-z0-9 _-]{0,47}$");
+    static readonly HashSet<string> Pictures = new(StringComparer.OrdinalIgnoreCase) { ".gif", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif", ".apng" };
+    static readonly HashSet<string> Videos = new(StringComparer.OrdinalIgnoreCase) { ".mp4", ".webm", ".mov", ".m4v", ".mkv", ".ogv" };
+
+    // Copy the Studio and built-in wallpapers from the install folder when this build is new.
+    public static void Sync()
+    {
+        string source = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "web"), stamp = Path.Combine(App, ".build");
+        string build = File.GetLastWriteTimeUtc(typeof(Library).Assembly.Location).Ticks + " " + Program.Version;
+        Directory.CreateDirectory(Folder); Directory.CreateDirectory(Media); Directory.CreateDirectory(Thumbs);
+        if (File.Exists(stamp) && File.ReadAllText(stamp) == build) return;
+        if (Directory.Exists(App)) Directory.Delete(App, true);
+        foreach (var file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+        {
+            var target = Path.Combine(App, file.Substring(source.Length + 1));
+            Directory.CreateDirectory(Path.GetDirectoryName(target));
+            File.Copy(file, target, true);
+        }
+        // HTML wallpapers in the library load ./lib/asciipaper.js: keep them on the current runtime.
+        Directory.CreateDirectory(Path.Combine(Folder, "lib"));
+        File.Copy(Path.Combine(App, @"wallpapers\lib\asciipaper.js"), Path.Combine(Folder, @"lib\asciipaper.js"), true);
+        File.WriteAllText(stamp, build);
+    }
+
+    public static bool Valid(string name) => name != null && NameRe.IsMatch(name);
+    public static string SpecPath(string name) => Path.Combine(Folder, name + ".json");
+    static string Url(string relative) => "/" + string.Join("/", relative.Split('/').Select(Uri.EscapeDataString));
+
+    public static bool Exists(string name) => Presets.Contains(name) ||
+        (Valid(name) && (File.Exists(SpecPath(name)) || File.Exists(Path.Combine(Folder, name + ".html"))));
+
+    // Every wallpaper, as the Studio shows it. `url` runs it; `spec` is its JSON, if it has one.
+    public static List<Dictionary<string, object>> List()
+    {
+        var list = Presets.Select(n => new Dictionary<string, object> {
+            ["name"] = n, ["title"] = n, ["kind"] = "preset", ["own"] = false,
+            ["url"] = Url($"app/wallpapers/{n}.html"),
+            ["thumb"] = File.Exists(Path.Combine(App, $@"wallpapers\thumbnails\{n}.jpg")) ? Url($"app/wallpapers/thumbnails/{n}.jpg") : null }).ToList();
+        var specs = Directory.GetFiles(Folder, "*.json").Select(Path.GetFileNameWithoutExtension).Where(Valid).OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
+        foreach (var name in specs)
+        {
+            string title = name;
+            try { title = Json.Object(File.ReadAllText(SpecPath(name))).Str("title", name); } catch (Exception) { }
+            list.Add(new() { ["name"] = name, ["title"] = title, ["kind"] = "spec", ["own"] = true,
+                ["url"] = Url("app/wallpapers/run.html") + "?spec=" + Uri.EscapeDataString(Url($"library/{name}.json")),
+                ["spec"] = Url($"library/{name}.json"), ["thumb"] = Thumb(name) });
+        }
+        foreach (var name in Directory.GetFiles(Folder, "*.html").Select(Path.GetFileNameWithoutExtension)
+                     .Where(n => Valid(n) && !File.Exists(SpecPath(n))).OrderBy(n => n, StringComparer.OrdinalIgnoreCase))
+            list.Add(new() { ["name"] = name, ["title"] = name, ["kind"] = "html", ["own"] = true,
+                ["url"] = Url($"library/{name}.html"), ["thumb"] = Thumb(name) });
+        return list;
+    }
+
+    public static string PageUrl(string name) => List().FirstOrDefault(w => (string)w["name"] == name)?["url"] as string;
+
+    static string Thumb(string name)
+    {
+        var file = Path.Combine(Thumbs, name + ".jpg");
+        return File.Exists(file) ? Url($"thumbs/{name}.jpg") + "?v=" + File.GetLastWriteTimeUtc(file).Ticks : null;
+    }
+
+    public static string SaveThumb(string name, string dataUrl)
+    {
+        if (!Valid(name) && !Presets.Contains(name)) throw new ArgumentException("bad name");
+        var comma = dataUrl.IndexOf(',');
+        File.WriteAllBytes(Path.Combine(Thumbs, name + ".jpg"), Convert.FromBase64String(dataUrl.Substring(comma + 1)));
+        return Thumb(name);
+    }
+
+    public static void SaveSpec(string name, object spec)
+    {
+        if (!Valid(name)) throw new ArgumentException("Names use letters, numbers, spaces, _ and -");
+        File.WriteAllText(SpecPath(name), Json.Pretty(spec) + "\n", new UTF8Encoding(false));
+        File.Delete(Path.Combine(Thumbs, name + ".jpg"));   // stale now; the Studio makes a new one
+    }
+
+    // A name for a new wallpaper, from a title or file name: plain letters, unique.
+    public static string NewName(string from)
+    {
+        var stem = Regex.Replace((from ?? "").Normalize(NormalizationForm.FormKC), @"[^A-Za-z0-9 _-]+", "").Trim();
+        stem = Regex.Replace(Regex.Replace(stem, @"\s*-\s*", "-"), @"\s+", "-").ToLowerInvariant();
+        if (stem.Length > 40) stem = stem.Substring(0, 40).TrimEnd('-');
+        if (stem.Length == 0 || !char.IsLetterOrDigit(stem[0])) stem = "ported";
+        string name = stem;
+        for (int i = 2; Exists(name); i++) name = $"{stem}-{i}";
+        return name;
+    }
+
+    // Copy a picture, GIF or video into the library. The Studio then measures it and writes the spec.
+    public static Dictionary<string, object> Import(string file, string title = null)
+    {
+        var ext = Path.GetExtension(file);
+        if (!Pictures.Contains(ext) && !Videos.Contains(ext))
+            throw new InvalidOperationException("That isn't a picture, GIF or video asciipaper can use");
+        var name = NewName(title ?? Path.GetFileNameWithoutExtension(file));
+        var stored = name + ext.ToLowerInvariant();
+        File.Copy(file, Path.Combine(Media, stored), true);
+        return new() { ["name"] = name, ["title"] = title ?? name, ["relative"] = "media/" + stored,
+                       ["media"] = Url("library/media/" + stored) };
+    }
+
+    static readonly HttpClient http = CreateClient();
+    static HttpClient CreateClient()
+    {
+        ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+        var client = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("asciipaper (https://github.com/cYoren/asciipaper)");
+        return client;
+    }
+
+    // Download a media link; posts on X/Twitter go through the public fxtwitter API.
+    public static async Task<Dictionary<string, object>> ImportUrl(string url)
+    {
+        string title = null;
+        var post = Regex.Match(url, @"^https?://(?:www\.)?(?:x|twitter|fxtwitter|vxtwitter)\.com/(\w+)/status/(\d+)");
+        if (post.Success)
+        {
+            var api = Json.Object(await http.GetStringAsync($"https://api.fxtwitter.com/{post.Groups[1].Value}/status/{post.Groups[2].Value}"));
+            var tweet = api.TryGetValue("tweet", out var t) ? t as Dictionary<string, object> : null;
+            var all = (tweet?.TryGetValue("media", out var m) == true ? m as Dictionary<string, object> : null)?.TryGetValue("all", out var a) == true ? a as object[] : null;
+            if (all == null || all.Length == 0) throw new InvalidOperationException("That post has no picture, GIF or video");
+            url = ((Dictionary<string, object>)all[0]).Str("url");
+            var text = Regex.Replace(tweet.Str("text", ""), @"https?://\S+", "").Normalize(NormalizationForm.FormKC);
+            text = Regex.Replace(text, @"\s+", " ").Trim();
+            var author = (tweet.TryGetValue("author", out var au) ? au as Dictionary<string, object> : null).Str("name", post.Groups[1].Value);
+            title = text.Length > 0 && text.Length <= 40 ? text : author.Normalize(NormalizationForm.FormKC);
+        }
+        var ext = Path.GetExtension(new Uri(url).AbsolutePath);
+        if (!Pictures.Contains(ext) && !Videos.Contains(ext)) ext = ".mp4";
+        var temp = Path.Combine(Path.GetTempPath(), "asciipaper-" + Guid.NewGuid().ToString("N") + ext);
+        try
+        {
+            using (var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
+            {
+                response.EnsureSuccessStatusCode();
+                var type = response.Content.Headers.ContentType?.MediaType ?? "";
+                if (type.StartsWith("image/gif")) temp = Path.ChangeExtension(temp, ".gif");
+                else if (type.StartsWith("image/png")) temp = Path.ChangeExtension(temp, ".png");
+                else if (type.StartsWith("image/jpeg")) temp = Path.ChangeExtension(temp, ".jpg");
+                else if (type.StartsWith("image/webp")) temp = Path.ChangeExtension(temp, ".webp");
+                using var output = File.Create(temp);
+                await (await response.Content.ReadAsStreamAsync()).CopyToAsync(output);
+            }
+            return Import(temp, title ?? Path.GetFileNameWithoutExtension(new Uri(url).AbsolutePath));
+        }
+        finally { try { File.Delete(temp); } catch (IOException) { } }
+    }
+
+    public static void Remove(string name)
+    {
+        if (!Valid(name) || Presets.Contains(name)) throw new InvalidOperationException("Built-in wallpapers can't be deleted");
+        var spec = SpecPath(name);
+        if (File.Exists(spec))
+        {
+            var data = Json.Object(File.ReadAllText(spec));
+            foreach (var key in new[] { "media", "shader" })
+            {
+                var relative = data.Str(key);
+                if (relative == null || relative == "media" || relative.Contains("cell(")) continue;
+                var path = Path.GetFullPath(Path.Combine(Folder, relative));
+                if (path.StartsWith(Folder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) File.Delete(path);
+            }
+            File.Delete(spec);
+        }
+        File.Delete(Path.Combine(Folder, name + ".html"));
+        File.Delete(Path.Combine(Thumbs, name + ".jpg"));
+    }
+
+    public static void NewShader(string name)
+    {
+        if (!Valid(name) || Exists(name)) throw new InvalidOperationException("Choose a new name: letters, numbers, spaces, _ and -");
+        File.Copy(Path.Combine(App, @"wallpapers\starter.glsl"), Path.Combine(Folder, name + ".glsl"));
+        SaveSpec(name, new Dictionary<string, object> {
+            ["title"] = name, ["shader"] = name + ".glsl", ["charset"] = " .:-=+ASCIIFY#@", ["cell"] = 10,
+            ["aspect"] = 0.6, ["background"] = "#080909", ["fill"] = 0.1,
+            ["uniforms"] = new Dictionary<string, object> { ["speed"] = 1 } });
+        OpenInEditor(Path.Combine(Folder, name + ".glsl"));
+    }
+
+    public static void OpenInEditor(string file)
+    {
+        try { Process.Start(new ProcessStartInfo(file) { UseShellExecute = true, Verb = "edit" }); }
+        catch (Exception) { Process.Start("notepad.exe", "\"" + file + "\""); }   // .glsl has no editor registered
+    }
+
+    public static void OpenFolder() => Process.Start(new ProcessStartInfo(Folder) { UseShellExecute = true });
+}

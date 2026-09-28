@@ -4,6 +4,7 @@
 // the second load is a no-op. Docs: ../../README.md#write-your-own
 (() => {
   if (window.asciipaper?.ascii) return;
+  const here = document.currentScript?.src || location.href;   // lib/ (for media.glsl)
 
   const options = Object.assign({fps: 24, idleFps: 12, quality: 1, pointer: 1, paused: false},
                                 window.__asciipaperOptions);
@@ -112,7 +113,7 @@ gl_FragColor=vec4(mix(under,d.gba,texture2D(atlas,uv).a),1.0);}`;
     canvas.style.cssText += ';position:fixed;inset:0;width:100vw;height:100vh;display:block';
     canvas.addEventListener('webglcontextlost', e => e.preventDefault());
     canvas.addEventListener('webglcontextrestored', () => location.reload());   // e.g. after suspend
-    const gl = canvas.getContext('webgl', {antialias: false, depth: false, stencil: false, alpha: false, preserveDrawingBuffer: false});
+    const gl = canvas.getContext('webgl', {antialias: false, depth: false, stencil: false, alpha: false, preserveDrawingBuffer: !!window.__asciipaperThumbnail || /[?&]thumbnail\b/.test(location.search)});
 
     const compile = (type, code) => { const s = gl.createShader(type); gl.shaderSource(s, code); gl.compileShader(s);
       if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('asciipaper shader: ' + gl.getShaderInfoLog(s)); return s; };
@@ -226,14 +227,19 @@ gl_FragColor=vec4(mix(under,d.gba,texture2D(atlas,uv).a),1.0);}`;
   // ---- spec(runtime): the web version of a wallpaper spec (asciipaper writes the page, with the
   // shader inlined). The media, if any, is the page's #asciipaper-media <img> or <video>; each
   // frame is drawn small and handed to the shader as `media`, like asciipaper-engine does.
+  const color = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? [1, 3, 5].map(i => parseInt(v.slice(i, i + 2), 16) / 255) : v;
+  const LOOK = ['charset', 'cell', 'aspect', 'maxCells', 'background', 'font', 'time', 'period', 'fill', 'weight'];
+  let live = null;   // the running spec: {uniforms, look} for patch()
+
   function spec(s) {
-    const color = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? [1, 3, 5].map(i => parseInt(v.slice(i, i + 2), 16) / 255) : v;
     const uniforms = {};
     for (const [k, v] of Object.entries(s.uniforms || {})) uniforms[k] = typeof v === 'boolean' ? +v : color(v);
+    live = {uniforms, look: JSON.stringify(LOOK.map(k => s[k])), shader: s.glsl};
     const config = {glsl: s.glsl};
-    for (const k of ['charset', 'cell', 'aspect', 'maxCells', 'background', 'font', 'time', 'period', 'fill', 'weight']) if (s[k] !== undefined) config[k] = s[k];
+    for (const k of LOOK) if (s[k] !== undefined) config[k] = s[k];
     const el = s.media && document.getElementById('asciipaper-media');
     if (el && 'playbackRate' in el) { el.playbackRate = uniforms.speed || 1; el.play?.().catch(() => {}); }
+    live.media = el;
     let frame = null, placeholder = false;
     return ascii(Object.assign(config, {
       update(scene) {
@@ -255,7 +261,42 @@ gl_FragColor=vec4(mix(under,d.gba,texture2D(atlas,uv).a),1.0);}`;
     }));
   }
 
-  window.asciipaper = {options, pointer, set, ascii, spec,
+  // ---- load(url): run a wallpaper spec straight from its JSON (pages served over http(s), where
+  // fetch works: the Windows app, a local server). Resolves the shader file or the built-in media
+  // shader, its `// defaults:` line, and the media element.
+  async function resolveSpec(url) {
+    const base = new URL(url, location.href), s = await (await fetch(base, {cache: 'no-store'})).json();
+    let glsl = s.shader ?? (s.media ? 'media' : null);
+    if (typeof glsl !== 'string') throw new Error('asciipaper: a spec needs "shader" or "media"');
+    if (!glsl.includes('cell(')) glsl = await (await fetch(glsl === 'media' ? new URL('media.glsl', here) : new URL(glsl, base), {cache: 'no-store'})).text();
+    const first = glsl.split('\n', 1)[0];
+    const defaults = first.startsWith('// defaults:') ? JSON.parse(first.slice(12)) : {};
+    return {...s, glsl, uniforms: {...defaults, ...s.uniforms}, mediaUrl: s.media && new URL(s.media, base).href};
+  }
+  async function load(url) {
+    const s = await resolveSpec(url);
+    if (s.mediaUrl) {
+      const still = /\.(gif|png|jpe?g|webp|bmp|avif|apng)$/i.test(new URL(s.mediaUrl).pathname);
+      const el = document.createElement(still ? 'img' : 'video');
+      Object.assign(el, {id: 'asciipaper-media', hidden: true, src: s.mediaUrl, crossOrigin: 'anonymous'});
+      if (!still) Object.assign(el, {muted: true, loop: true, autoplay: true, playsInline: true});
+      document.body.append(el);
+    }
+    return spec(s);
+  }
+  // patch(url): after the spec changed on disk. Uniform-only changes apply live; returns false when
+  // the page must reload (characters, size, shader, media…).
+  async function patch(url) {
+    if (!live) return false;
+    const s = await resolveSpec(url);
+    if (JSON.stringify(LOOK.map(k => s[k])) !== live.look || s.glsl !== live.shader) return false;
+    for (const k of Object.keys(live.uniforms)) delete live.uniforms[k];
+    for (const [k, v] of Object.entries(s.uniforms)) live.uniforms[k] = typeof v === 'boolean' ? +v : color(v);
+    if (live.media && 'playbackRate' in live.media) live.media.playbackRate = live.uniforms.speed || 1;
+    return true;
+  }
+
+  window.asciipaper = {options, pointer, set, ascii, spec, load, patch,
     onChange(callback) { addEventListener('asciipaper-settings', event => callback(event.detail)); }};
   set({});
 })();
