@@ -14,7 +14,7 @@ CODE = $(patsubst %.xml,%-protocol.c,$(notdir $(XML)))
 vpath %.xml $(sort $(dir $(XML)))
 
 asciipaper-engine: engine.c presets.c spec.c json.c engine.h spec.h json.h $(HEADERS) $(CODE)
-	$(CC) $(CFLAGS) $(shell pkg-config --cflags $(PKGS)) -I. -o $@ engine.c presets.c spec.c json.c $(CODE) $(shell pkg-config --libs $(PKGS)) -lm
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(shell pkg-config --cflags $(PKGS)) -I. -o $@ engine.c presets.c spec.c json.c $(CODE) $(LDFLAGS) $(shell pkg-config --libs $(PKGS)) -lm
 
 %-client-protocol.h: %.xml
 	wayland-scanner client-header $< $@

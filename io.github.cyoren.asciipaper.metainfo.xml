@@ -2,11 +2,12 @@
 <component type="desktop-application">
   <id>io.github.cyoren.asciipaper</id>
   <name>asciipaper</name>
-  <summary>Interactive ASCII wallpapers for Wayland</summary>
+  <summary>Live, interactive ASCII wallpapers</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
   <description>
-    <p>Run animated, interactive ASCII artwork as a live desktop wallpaper. Includes Fluid, Matrix, Flow, and a cursor-responsive rotating yin-yang, and lets you create your own wallpapers with HTML, Canvas, CSS, JavaScript, or WebGL.</p>
+    <p>Run animated, interactive ASCII artwork as a live desktop wallpaper. A small native engine draws it on the GPU at a fraction of a web view's power and memory.</p>
+    <p>Port any picture, GIF or video (or a post on X) into an ASCII wallpaper that reacts to the pointer, and tune its characters, colours and effects live. Write your own as a GLSL shader or as HTML, and export them for Wallpaper Engine, Lively Wallpaper and Plash on Windows and macOS.</p>
   </description>
   <launchable type="desktop-id">io.github.cyoren.asciipaper.desktop</launchable>
   <url type="homepage">https://github.com/cYoren/asciipaper</url>
@@ -18,6 +19,13 @@
     <name>cYoren</name>
   </developer>
   <content_rating type="oars-1.1" />
+  <releases>
+    <release version="1.0.0" date="2026-09-28">
+      <description>
+        <p>Native engine for the built-in presets, porting pictures, GIFs and videos, wallpaper specs, a new Studio, and one export for Windows and macOS.</p>
+      </description>
+    </release>
+  </releases>
   <keywords>
     <keyword>ASCII</keyword>
     <keyword>wallpaper</keyword>

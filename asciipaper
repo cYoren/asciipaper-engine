@@ -17,9 +17,11 @@ Usage:
   asciipaper create NAME [--html]  start a shader wallpaper (or an HTML one) in your library
   asciipaper preview NAME    open a wallpaper in a normal window; reloads when you save
   asciipaper export NAME [OUTPUT.zip]  one ZIP for Wallpaper Engine / Lively (Windows) and Plash (macOS)
+  asciipaper render NAME OUT.mp4|webm|gif [--seconds S] [--size WxH]  record it as a video or GIF
 """
 import os
 import json
+import math
 import socket
 import threading
 import re
@@ -40,6 +42,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 # gtk4-layer-shell must be linked before libwayland; for Python that means preloading it.
+VERSION = "1.0.0"
 FLATPAK = os.environ.get("FLATPAK_ID") == "io.github.cyoren.asciipaper"
 PRELOAD = ("/app/lib/libgtk4-layer-shell.so.0" if FLATPAK else
            "/usr/lib/libgtk4-layer-shell.so")
@@ -453,6 +456,48 @@ def request_thumbnail(name, callback):
                 temporary.replace(path)
                 callback(path)
     threading.Thread(target=work, daemon=True).start()
+
+
+def render_video(target, output, seconds=None, size=None, fps=30):
+    """Record a wallpaper to a video or GIF (by output's extension) with asciipaper-engine's offscreen
+    mode: for video-wallpaper apps (GNOME extensions, phones, Wallpaper Engine) and for sharing."""
+    args = engine_args(target)
+    if not args:
+        sys.exit("asciipaper: render works with the built-in presets and with ported or shader wallpapers")
+    if not shutil.which("ffmpeg"):
+        sys.exit("asciipaper: rendering needs ffmpeg (sudo pacman -S ffmpeg)")
+    output = Path(output).expanduser().resolve()
+    kind = output.suffix.lower()
+    if kind not in {".mp4", ".webm", ".gif", ".mkv", ".mov"}:
+        sys.exit("asciipaper: render to .mp4, .webm, .mkv, .mov or .gif")
+    size = size or ("960x540" if kind == ".gif" else "1920x1080")
+    if not re.fullmatch(r"\d{2,5}x\d{2,5}", size):
+        sys.exit("asciipaper: --size is WIDTHxHEIGHT, e.g. 1920x1080")
+    fps = min(fps, 25) if kind == ".gif" else fps
+    spec = spec_file(target)
+    media = spec and read_spec(spec).get("media")
+    if seconds is None:   # a ported loop: whole loops, at least 3 s; everything else: 10 s
+        seconds = 10.0
+        frames = spec.parent / f"{media}.frames" if isinstance(media, str) else None
+        if frames and frames.is_file():
+            header = frames.read_bytes()[:20]
+            count, rate = struct.unpack("<4I", header[4:20])[2:]
+            if rate and count > 1:
+                loop = count / (rate / 1000)
+                seconds = loop * max(1, math.ceil(3 / loop))
+    width, height = map(int, size.split("x"))
+    encode = {".gif": ["-filter_complex", "split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3",
+                       "-loop", "0"],
+              ".webm": ["-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "28", "-pix_fmt", "yuv420p", "-row-mt", "1"]}.get(
+        kind, ["-c:v", "libx264", "-preset", "slow", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart"])
+    engine = subprocess.Popen([*args, "--snapshot", "-", "--size", size, "--seconds", f"{seconds:.3f}", "--record", str(fps),
+                               "--warmup", "0" if spec else "3"], stdout=subprocess.PIPE, env=engine_env())
+    ffmpeg = subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{width}x{height}",
+                             "-r", str(fps), "-i", "-", *encode, str(output)], stdin=engine.stdout, capture_output=True)
+    engine.stdout.close()
+    if engine.wait() or ffmpeg.returncode:
+        sys.exit(f"asciipaper: rendering failed: {ffmpeg.stderr.decode(errors='replace').strip() or 'engine error'}")
+    return output
 
 
 def export_web(target, destination=None):
@@ -1102,6 +1147,10 @@ def run(target, studio=False, preview=False):
                                    subtitle="One ZIP for Wallpaper Engine, Lively Wallpaper or Plash", activatable=True)
         export_row.add_suffix(Gtk.Image(icon_name="document-save-symbolic"))
         share.add(export_row)
+        video_row = Adw.ActionRow(title="Save as a video or GIF", activatable=True,
+                                  subtitle="For video wallpapers (GNOME, phones) or to share. Not for HTML wallpapers")
+        video_row.add_suffix(Gtk.Image(icon_name="camera-video-symbolic"))
+        share.add(video_row)
         edit_row = Adw.ActionRow(title="Open in your editor", subtitle="Wallpapers you made or ported", activatable=True)
         edit_row.add_suffix(Gtk.Image(icon_name="document-edit-symbolic"))
         share.add(edit_row)
@@ -1133,6 +1182,28 @@ def run(target, studio=False, preview=False):
                     toast(f"Could not export: {getattr(error, 'code', None) or error}")
             dialog.save(win, None, done)
         export_row.connect("activated", export_selected)
+
+        def video_selected(*_):
+            name = selected_name()
+            if not engine_args(name):
+                toast("Videos can be made from built-in, ported and shader wallpapers")
+                return
+            dialog = Gtk.FileDialog(title="Save as a video or GIF", initial_name=f"{name}.mp4")
+            def done(d, result):
+                try:
+                    target = d.save_finish(result).get_path()
+                except GLib.Error:
+                    return
+                toast("Rendering… this takes a little while")
+                def work():
+                    try:
+                        message = f"Saved {render_video(name, target).name}"
+                    except SystemExit as error:
+                        message = str(error.code)
+                    GLib.idle_add(lambda: toast(message) and False)
+                threading.Thread(target=work, daemon=True).start()
+            dialog.save(win, None, done)
+        video_row.connect("activated", video_selected)
 
         def edit_selected(*_):
             path = user_file(selected_name())
@@ -1171,6 +1242,7 @@ def run(target, studio=False, preview=False):
         delete_row.connect("activated", delete_selected)
 
         def track_selection(*_):
+            video_row.set_sensitive(bool(engine_args(selected_name())))
             own = bool(user_file(selected_name()))
             edit_row.set_sensitive(own); delete_row.set_sensitive(own)
         flow.connect("selected-children-changed", track_selection)
@@ -1372,7 +1444,9 @@ def set_wallpaper(target):
 
 def main():
     args = sys.argv[1:]
-    if args[:1] == ["list"]:
+    if args in (["--version"], ["-v"]):
+        print(f"asciipaper {VERSION}")
+    elif args[:1] == ["list"]:
         print("\n".join(library()))
     elif args[:1] == ["import"] and len(args) in {2, 3}:
         if len(args) == 3 and not re.fullmatch(NAME_RE, args[2]):
@@ -1401,6 +1475,15 @@ def main():
             destination = USER_WALLPAPERS / f"{name}.glsl"
         print(f"Created {destination}\nTry it: asciipaper '{name}'   Keep it: asciipaper set '{name}'\n"
               f"Edits show live while it runs.")
+    elif args[:1] == ["render"] and len(args) >= 3:
+        options = dict(zip(args[3::2], args[4::2]))
+        if len(args[3:]) % 2 or set(options) - {"--seconds", "--size"}:
+            sys.exit("Usage: asciipaper render <wallpaper> <output.mp4|webm|gif> [--seconds S] [--size WxH]")
+        try:
+            seconds = float(options["--seconds"]) if "--seconds" in options else None
+        except ValueError:
+            sys.exit("asciipaper: --seconds takes a number")
+        print(f"Created {render_video(args[1], args[2], seconds, options.get('--size'))}")
     elif args[:1] == ["export"] and len(args) in {2, 3, 4}:
         rest = args[2:] if args[1] == "lively" else args[1:]   # `export lively` is the old spelling
         if not rest or len(rest) > 2:

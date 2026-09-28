@@ -7,6 +7,8 @@
 //        asciipaper-engine --spec WALLPAPER.json --lib DIR   (DIR holds media.glsl; see spec.c)
 //        ... --snapshot OUT.png [--size 1920x1080] [--seconds 3] [--pointer X,Y]
 //            render offscreen, without a compositor: previews, thumbnails and tests.
+//        ... --snapshot - --record FPS [--warmup S] ...
+//            write --seconds of raw RGBA frames to stdout instead (asciipaper render pipes them to ffmpeg).
 // Settings come from $XDG_CONFIG_HOME/asciipaper/engine.json and are re-read when it changes.
 // A line "pause [OUTPUT...]" on stdin sets which monitors stop drawing; the launcher sends these
 // on Hyprland when a fullscreen window covers a monitor.
@@ -606,7 +608,7 @@ static void arm(int timer, double fps) {
 }
 
 // --snapshot: one virtual monitor on a pbuffer, simulated for a few seconds at 30 fps, saved as PNG.
-static int take_snapshot(int width, int height, double seconds, float px, float py) {
+static int take_snapshot(int width, int height, double seconds, float px, float py, double record_fps, double warmup) {
     egl_display = eglGetPlatformDisplay(0x31DD /* EGL_PLATFORM_SURFACELESS_MESA */, EGL_DEFAULT_DISPLAY, NULL);
     EGLint count;
     static const EGLint config_attribs[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8,
@@ -624,13 +626,28 @@ static int take_snapshot(int width, int height, double seconds, float px, float 
     o->scene.output = o; o->scene.pointer = &o->pointer; o->scene.time = P->time;
     wl_list_insert(&outputs, &o->link);
     setup(o);
+    uint8_t *rgba = malloc((size_t)o->buf_w * o->buf_h * 4), *row = malloc((size_t)o->buf_w * 4);
+    if (record_fps > 0) {   // warm up (simulations settle), then stream frames top row first
+        double step = 1 / record_fps, now = 0;
+        for (; now < warmup; now += step) draw(o, now);
+        for (int i = 0, n = fmax(1, round(seconds * record_fps)); i < n; i++, now += step) {
+            draw(o, now);
+            glReadPixels(0, 0, o->buf_w, o->buf_h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+            for (int y = 0; y < o->buf_h / 2; y++) {
+                uint8_t *a = rgba + (size_t)y * o->buf_w * 4, *b = rgba + (size_t)(o->buf_h - 1 - y) * o->buf_w * 4;
+                memcpy(row, a, o->buf_w * 4); memcpy(a, b, o->buf_w * 4); memcpy(b, row, o->buf_w * 4);
+            }
+            if (fwrite(rgba, (size_t)o->buf_w * o->buf_h * 4, 1, stdout) != 1) return 1;   // the reader went away
+        }
+        fflush(stdout);
+        return 0;
+    }
     int frames = fmax(1, seconds * 30);
     for (int i = 0; i < frames; i++) {
         double now = i / 30.0;
         if (px >= 0) { o->pointer.inside = 1; o->pointer.moved = now; if (P->pointer_move && o->scene.state) P->pointer_move(&o->scene); }
         draw(o, now);
     }
-    uint8_t *rgba = malloc((size_t)o->buf_w * o->buf_h * 4);
     glReadPixels(0, 0, o->buf_w, o->buf_h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
     cairo_surface_t *image = cairo_image_surface_create(CAIRO_FORMAT_RGB24, o->buf_w, o->buf_h);
     uint32_t *out = (uint32_t *)cairo_image_surface_get_data(image);
@@ -649,7 +666,7 @@ static int take_snapshot(int width, int height, double seconds, float px, float 
 
 static void usage(const char *argv0) {
     fprintf(stderr, "usage: %s PRESET | --spec WALLPAPER.json [--lib DIR]\n"
-                    "       [--snapshot OUT.png [--size WxH] [--seconds S] [--pointer X,Y]]\npresets:", argv0);
+                    "       [--snapshot OUT.png|- [--size WxH] [--seconds S] [--pointer X,Y] [--record FPS [--warmup S]]]\npresets:", argv0);
     for (int i = 0; presets[i]; i++) fprintf(stderr, " %s", presets[i]->name);
     fputc('\n', stderr);
     exit(2);
@@ -657,7 +674,7 @@ static void usage(const char *argv0) {
 
 int main(int argc, char **argv) {
     int snap_w = 1920, snap_h = 1080;
-    double snap_seconds = 3;
+    double snap_seconds = 3, record_fps = 0, warmup = 0;
     float snap_x = -1, snap_y = -1;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--spec") && i + 1 < argc) spec_path = argv[++i];
@@ -665,6 +682,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &snap_w, &snap_h);
         else if (!strcmp(argv[i], "--seconds") && i + 1 < argc) snap_seconds = atof(argv[++i]);
         else if (!strcmp(argv[i], "--pointer") && i + 1 < argc) sscanf(argv[++i], "%f,%f", &snap_x, &snap_y);
+        else if (!strcmp(argv[i], "--record") && i + 1 < argc) record_fps = fmin(120, fmax(1, atof(argv[++i])));
+        else if (!strcmp(argv[i], "--warmup") && i + 1 < argc) warmup = fmax(0, atof(argv[++i]));
         else if (!strcmp(argv[i], "--lib") && i + 1 < argc) lib_dir = argv[++i];
         else for (int k = 0; presets[k]; k++) if (!strcmp(presets[k]->name, argv[i])) P = presets[k];
     }
@@ -680,7 +699,7 @@ int main(int argc, char **argv) {
     wl_list_init(&outputs);
     if (snapshot) {
         options.quality = 1;
-        return take_snapshot(fmax(16, snap_w), fmax(16, snap_h), snap_seconds, snap_x, snap_y);
+        return take_snapshot(fmax(16, snap_w), fmax(16, snap_h), snap_seconds, snap_x, snap_y, record_fps, warmup);
     }
     display = wl_display_connect(NULL);
     if (!display) { fprintf(stderr, "asciipaper-engine: no Wayland display\n"); return 1; }
