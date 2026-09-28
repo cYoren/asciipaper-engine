@@ -1,10 +1,12 @@
 # asciipaper
 
-> Live, animated, mouse-interactive ASCII wallpapers for Omarchy, Arch Linux and Wayland compositors with layer-shell (Hyprland, Sway, niri). Any HTML page becomes a desktop background on every monitor.
+> Live, interactive ASCII wallpapers. Native GPU engine on Wayland desktops with layer-shell (Hyprland, KDE Plasma, Sway, niri, COSMIC, river, Wayfire, labwc); exports for Wallpaper Engine / Lively (Windows) and Plash (macOS); records to video or GIF for everything else. Ports any picture, GIF, video or X/Twitter post into an ASCII wallpaper.
 
 - Repo: https://github.com/cYoren/asciipaper
-- Install: `git clone https://github.com/cYoren/asciipaper && cd asciipaper && ./install.sh`
-- Use: `asciipaper set <fluid|flow|matrix|asciify|URL|file.html>`
-- Write a wallpaper: one .html that loads ./lib/asciipaper.js and calls asciipaper.ascii({glsl: "vec4 cell(vec2 uv){...}"}) — GPU-rendered glyph grid with pointer/click uniforms; or plain canvas. Preview with `asciipaper preview file.html`. See skills/asciipaper/SKILL.md.
+- Install: `yay -S asciipaper` (Arch) or `git clone https://github.com/cYoren/asciipaper && cd asciipaper && ./install.sh`
+- Use: `asciipaper --studio` (GUI), `asciipaper set <fluid|flow|matrix|yin-yang|name|URL|file.html>`
+- Port media: `asciipaper import <file|URL|x.com post> [name]` → a JSON spec wallpaper; edit its uniforms live.
+- Write a wallpaper: `asciipaper create NAME` → NAME.glsl with `vec4 cell(vec2 uv)` returning (r, g, b, level); uniforms u_time u_grid u_size u_aspect u_pointer u_velocity u_down u_idle u_strength u_clicks[8]. Or HTML with ./lib/asciipaper.js. See skills/asciipaper/SKILL.md.
+- Share: `asciipaper export NAME` (Windows/macOS ZIP), `asciipaper render NAME out.mp4|gif`.
 - Agent skill: `npx skills add cYoren/asciipaper`
-- Bundled: offline 1:1 port of asciify.org Fluid (asciify-engine, MIT).
+- Bundled: offline port of asciify.org Fluid (asciify-engine, MIT).

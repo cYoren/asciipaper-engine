@@ -1,116 +1,144 @@
 # asciipaper
 
-Live, animated, mouse-interactive **ASCII wallpapers** for [Omarchy](https://omarchy.org), Arch Linux and any Wayland compositor with layer-shell (Hyprland, Sway, river, niri…).
-
-Any web page — a preset, a URL, or a local `.html` — rendered GPU-accelerated in WebKitGTK and pinned to the desktop **background layer** of every monitor with [gtk4-layer-shell](https://github.com/wmww/gtk4-layer-shell). Pointer events reach the page when the cursor is over the bare desktop, so wallpapers react to the mouse. Isolated from the shell (can't crash it), idles when covered by windows, runs as a systemd user service.
-
-Ships with an offline, 1:1 port of the [asciify.org Fluid background](https://asciify.org/docs/backgrounds/fluid).
+Live, interactive **ASCII wallpapers**. Pick one of the built-in scenes, or port any picture, GIF or video (even a post on X) into ASCII art that moves on your desktop and reacts to your pointer. Write your own as a single GLSL function, and take them to Windows and macOS too.
 
 ![asciipaper running the Fluid wallpaper on the Omarchy desktop](assets/demo.gif)
 
-_[Full-quality demo (MP4)](assets/demo.mp4)_
+![The built-in wallpapers and two ports: a video (a Mandelbrot zoom) and a picture](assets/gallery.png)
+
+- **Light.** A small native engine (C, OpenGL ES) draws on the GPU: under 1% of a CPU core and about 100 MB, where a web view needs about 1 GB. It stops drawing behind fullscreen windows and on monitors the compositor isn't showing.
+- **Interactive.** A hover lens, click ripples, fluid wakes: wallpapers see the pointer whenever it's over the desktop.
+- **Port anything.** Pictures, GIFs, videos, links, and posts on X or Twitter. asciipaper measures the media and picks a starting look: levels, colours, and which parts get the dense characters.
+- **Customizable, live.** Characters, size, weight, glow, colours, contrast, fit, backdrop and effects all change on your desktop as you move the sliders.
+- **Everywhere it can be.** Native on Wayland desktops with layer-shell (Hyprland, KDE Plasma, Sway, niri, COSMIC, river, Wayfire, labwc). One export for Wallpaper Engine and Lively on Windows and Plash on macOS. Videos and GIFs for everything else.
 
 ## Install
+
+**Arch Linux** (AUR):
+
+```sh
+yay -S asciipaper
+systemctl --user enable --now asciipaper.service
+```
+
+**From source** (Arch, Fedora, Debian/Ubuntu; installs into `~/.local`):
 
 ```sh
 git clone https://github.com/cYoren/asciipaper && cd asciipaper && ./install.sh
 ```
 
-Deps: WebKitGTK 6.0, gtk4-layer-shell, PyGObject. `install.sh` knows pacman (tested), dnf and apt (untested — PRs welcome). Remove with `./install.sh uninstall`.
-
-Works on any Wayland compositor that implements `wlr-layer-shell`: Hyprland, Sway, niri, river, Wayfire, labwc, KDE Plasma. Not GNOME (Mutter has no layer-shell) and not X11.
+Packagers: `make && make install PREFIX=/usr DESTDIR=…`. Runtime: Python 3 with PyGObject, GTK 4, libadwaita, gtk4-layer-shell, WebKitGTK 6.0 (for HTML wallpapers), and optionally ffmpeg (porting and recording). The engine needs wayland, EGL/GLES 2 and pango, and wayland-protocols to build.
 
 ## Use
 
+Open **asciipaper** from your launcher (or `asciipaper --studio`):
+
+![The Studio](assets/studio.png)
+
+Click a wallpaper to put it on your desktop. Use **+** or drag a file onto the window to port a picture, GIF or video. The Look panel changes the selected port live. Or from a terminal:
+
 ```sh
-asciipaper list                 # presets
-asciipaper set fluid            # Asciify's Fluid background, offline port (default)
-asciipaper set flow             # stable-fluids sim, character ramp (offline)
-asciipaper set matrix           # matrix rain (offline)
-asciipaper set yin-yang         # rotating, cursor-responsive ASCII emblem
-asciipaper set asciify          # offline Asciify Fluid renderer
-asciipaper set https://…        # any page
-asciipaper set ~/my/rain.html   # any local file
-asciipaper create aurora        # copy a ready-to-edit wallpaper starter
+asciipaper list                        # everything in your library
+asciipaper set matrix                  # choose (and keep) a wallpaper
+asciipaper import ~/Videos/rain.mp4    # port a picture, GIF or video…
+asciipaper import https://x.com/…/status/…   # …or a link, or a post on X
+asciipaper create aurora               # start your own shader wallpaper
+asciipaper export aurora               # ZIP for Windows and macOS
+asciipaper render aurora aurora.mp4    # record a video or GIF
 ```
 
-The Studio lets you choose or import wallpapers, create an editable copy, and tune frame rate, render quality, and pointer response while the wallpaper is running. It reports CPU use for the engine and WebKit renderer processes and can apply lower-cost settings. All launches talk to one application instance, so changing presets replaces the current wallpaper instead of starting a second engine. `set` saves to `~/.config/asciipaper/wallpaper` and restarts the service on a native install. Run `asciipaper <target>` to switch the live wallpaper from the command line.
+## Port anything
 
-## Write your own (or ask an AI to)
+![A ported video, reacting to the pointer](assets/port.gif)
 
-A wallpaper is an `.html` file plus any local assets. Any web page works, but `lib/asciipaper.js` gives you an ASCII engine: you write what each character cell looks like and it handles the grid, glyphs, GPU drawing, frame pacing and input.
+`asciipaper import` accepts a file, a direct link, or a post on X or Twitter (through the public [fxtwitter](https://github.com/FixTweet/FxTwitter) API). It decodes the media once with ffmpeg into small frames the engine plays in a loop, and writes a wallpaper spec, `~/.local/share/asciipaper/user-wallpapers/NAME.json`, with a starting look measured from the media:
+
+- stretches its brightness to use every character;
+- takes a tint and a dark background from its average colour;
+- inverts paper-like pictures (sketches, line art, text), so the drawing gets the dense characters.
+
+Everything the Studio's Look panel changes lives in that file, so you can also edit it by hand while it runs.
+
+## Make your own
+
+A wallpaper can be a **shader spec**: a JSON file plus a GLSL function that runs once per character. asciipaper-engine runs it natively; the same files run in a browser, so they export to Windows and macOS unchanged.
+
+```sh
+asciipaper create aurora     # makes aurora.json + aurora.glsl in ~/.local/share/asciipaper/user-wallpapers
+asciipaper set aurora        # put it on your desktop; saving either file updates it live
+```
+
+```glsl
+// defaults: {"speed": 1}
+uniform float speed;                       // set from the spec's "uniforms"
+vec4 cell(vec2 uv) {                       // uv: this character's centre, 0..1 from the top left
+  float d = length((uv - u_pointer) * vec2(u_aspect, 1.0));
+  float level = 0.5 + 0.5 * sin(d * 30.0 - u_time * 3.0 * speed);
+  return vec4(0.2, 0.8, 0.7, level);       // colour, and level 0..1 picks the character
+}
+```
+
+Built-in uniforms: `u_time` (s), `u_grid` (columns, rows), `u_size` (px), `u_aspect`, `u_pointer` (0..1), `u_velocity`, `u_down`, `u_idle` (s since the pointer moved), `u_strength` (the pointer setting) and `u_clicks[8]` (x, y, age in s). A shader error prints to the terminal (or `journalctl --user -u asciipaper`) and the last good version keeps running.
+
+The spec (`aurora.json`):
+
+| Key | Meaning |
+|---|---|
+| `shader` | a `.glsl` file beside the spec, inline GLSL, or `"media"` (the built-in picture shader) |
+| `media` | a picture, GIF or video beside the spec (made by `asciipaper import`) |
+| `charset` | characters from light to dense, the first usually a space |
+| `cell`, `aspect` | character width in px, and width / height |
+| `weight`, `font` | font weight (100–900) and family |
+| `fill` | 0–1: each character's colour, faintly, behind it |
+| `background` | `"#rrggbb"` |
+| `maxCells` | caps the grid on huge screens (default 40000) |
+| `uniforms` | values for the shader's uniforms: numbers, `[x, y]`, or `"#rrggbb"` colours |
+
+The media shader's settings (`uniforms` of a port) are `fit` (0 whole picture, 1 fill), `zoom`, `offset`, `contrast`, `brightness`, `gamma`, `threshold`, `invert`, `colorMode` (0 own colours, 1 tint, 2 gradient), `vivid`, `tint`, `tint2`, `backdrop`, `lens`, `ripple` and `speed`. See [`wallpapers/lib/media.glsl`](wallpapers/lib/media.glsl).
+
+### HTML wallpapers
+
+Any web page also works (in WebKit): `asciipaper set https://…`, `asciipaper set ~/page.html`, or `asciipaper create NAME --html` for a starter. `lib/asciipaper.js` gives HTML wallpapers the same ASCII renderer, pacing and input:
 
 ```html
 <script src="./lib/asciipaper.js"></script>
 <script>
-asciipaper.ascii({
-  charset: ' .:-=+*#%@', cell: 10, aspect: .6,        // glyphs, cell width in px, width/height
-  glsl: `vec4 cell(vec2 uv) {                          // runs on the GPU for every cell
-    float d = length((uv - u_pointer) * vec2(u_aspect, 1.0));
-    float level = 0.5 + 0.5 * sin(d * 30.0 - u_time * 3.0);
-    return vec4(0.2, 0.8, 0.7, level);                 // rgb, and level 0..1 picks the glyph
-  }`,
-});
+asciipaper.ascii({charset: ' .:-=+*#%@', cell: 10, aspect: .6,
+  glsl: `vec4 cell(vec2 uv) { return vec4(0.2, 0.8, 0.7, 0.5 + 0.5 * sin(uv.x * 20.0 + u_time)); }`,
+  update(scene, dt) { /* set scene.uniforms.x, or scene.put(col, row, level, r, g, b) without glsl */ }});
 </script>
 ```
 
-- **GPU mode** (`glsl`): `cell(uv)` gets the cell centre (0..1, top left). Built in: `u_time`, `u_grid` (cols, rows), `u_size` (px), `u_aspect`, `u_pointer`, `u_velocity`, `u_down`, `u_idle` (seconds since the pointer moved), `u_strength` (pointer setting), `u_clicks[8]` (x, y, age). Declare your own `uniform`s and set them in `update(scene, dt)` via `scene.uniforms.name = value`, or pass textures with `scene.texture(name, w, h, rgbaBytes)`.
-- **CPU mode** (no `glsl`): write cells in `update(scene, dt)` with `scene.put(col, row, level, r, g, b)`; the engine uploads and draws them. Good for simulations and games (`flow.html`).
-- Other options: `font`, `background`, `maxCells`, `lut` (256 glyph indices for an exact brightness ramp), `time`/`period` (time wraps every `period` seconds so floats stay precise), `resize(scene)`, `canvas`.
-- Input: `asciipaper.pointer` (`x`, `y`, `vx`, `vy`, `down`, `inside`, `clicks`), or plain DOM events (`pointermove`, `pointerdown`, `wheel`) which fire when the cursor is over the bare desktop. Keyboard never arrives, by design.
-- Settings: `asciipaper.options` (`fps`, `idleFps`, `quality`, `pointer`, `paused`) and `asciipaper.onChange(callback)`. You don't need to throttle anything: the engine paces every `requestAnimationFrame` on the page, at `fps` while the pointer is active, `idleFps` otherwise, and stops entirely while a fullscreen window covers that monitor (Hyprland).
-- Plain Canvas/WebGL/CSS pages still work and get the same pacing. Keep Linux APIs out of wallpaper files; they also run in a regular browser and in Lively on Windows.
+Options: `font`, `weight`, `fill`, `background`, `maxCells`, `lut` (256 glyph indices), `time`/`period`, `resize(scene)`, `scene.texture(name, w, h, rgba)`. Input: `asciipaper.pointer` or DOM pointer events (never the keyboard). Settings: `asciipaper.options` and `asciipaper.onChange()`. The engine paces `requestAnimationFrame` for you. `asciipaper preview FILE` opens a window that reloads on save and prints console errors. Examples: [`wallpapers/`](wallpapers/).
 
-```sh
-asciipaper create aurora        # copy the starter to ~/.local/share/asciipaper/user-wallpapers/aurora.html
-asciipaper preview aurora       # normal window, reloads on every save, console output in the terminal
-asciipaper set aurora           # make it the wallpaper (it hot-reloads on save too)
-```
+Prompt that works: *"Write an asciipaper shader wallpaper: a GLSL `vec4 cell(vec2 uv)` returning colour and a 0..1 level, using `u_time`, `u_pointer` and `u_clicks` (see the README). Theme: ‹ocean waves›."*
 
-Examples in `wallpapers/`: `starter.html` (the template), `matrix.html` (stateless rain, pure shader), `yin-yang.html` (JS drives uniforms, shader draws), `flow.html` (CPU fluid sim), `fluid.html` (asciify's Fluid: shader plus a small CPU pointer field passed as a texture).
+## Windows, macOS, GNOME, phones
 
-Prompt that works: *"Write an asciipaper wallpaper: one HTML file that loads ./lib/asciipaper.js and calls asciipaper.ascii({glsl}) (see README). Theme: ‹ocean waves›, reacts to the pointer and clicks."*
+- **Windows and macOS:** `asciipaper export NAME` (or Share in the Studio) makes one ZIP. In **Wallpaper Engine**, open its `project.json`; in **Lively Wallpaper**, drag the ZIP in; on macOS, unzip and add `index.html` to **Plash**. The wallpaper stays interactive, and each app's settings panel controls the frame rate, quality and pointer response.
+- **GNOME, X11, phones, sharing:** these can't host a live Wayland wallpaper, but `asciipaper render NAME out.mp4` (or `.webm`, `.gif`) records one: ports record whole loops, everything else 10 seconds (`--seconds`, `--size`). Use it with a video-wallpaper app or extension, or post it.
 
 ## Performance
 
-Every preset draws through the GPU renderer, so the CPU only sets a few uniforms per frame. The defaults are 24 fps with the pointer on the desktop, 12 fps otherwise, render quality 1.0 (device pixels; above 1 supersamples), and no rendering behind fullscreen windows. Studio has sliders for each and shows measured CPU use.
+The engine draws at `fps` (24) while the pointer is on the desktop and `idleFps` (12) otherwise, and doesn't draw at all when the compositor isn't showing a monitor or, on Hyprland, when a fullscreen window covers it. The Studio's Performance section sets these, the render quality and the pointer response, and shows the engine's measured CPU. Settings live in `~/.config/asciipaper/engine.json`; `"renderer": "web"` runs everything in WebKit instead.
 
-The built-in presets run on `asciipaper-engine` (`native/`, built by `install.sh`), a small C program that runs the same shaders through EGL and OpenGL ES without WebKit. It supports pointer and click effects, HiDPI and fractional scaling, and monitor hotplug, on any compositor with layer-shell. In one test it used under 1% CPU and about 110 MB for the matrix preset, where WebKit used 8% and around 1 GB. Your own HTML wallpapers and URLs still use WebKit. To run the built-in presets in WebKit too, add `"renderer": "web"` to `~/.config/asciipaper/engine.json`. The engine's shaders are copies of those in `wallpapers/*.html` (see `native/presets.c`), so edit both when you change a preset.
+Measured on an Intel laptop at 9 fps across two monitors plus a virtual one: 0.5–0.6% CPU and about 110 MB for fluid, matrix and yin-yang (flow simulates on the CPU: 2.7%). The WebKit build of matrix used 8% and about 1 GB.
 
 WebKit applies the desktop's text-scaling factor as page zoom, so with text scaling above 1 the web versions draw larger characters than the native engine.
 
-## Add a preset
-
-Put the file in `wallpapers/` and add `"name": f"file://{LOCAL}/name.html"` to `PRESETS` in `asciipaper`.
-
-## Flathub
-
-The repository includes an AppStream entry, desktop launcher, icon, and Flatpak build manifest. The Flatpak Studio can create, import, and edit HTML wallpapers, and user files stay in Flatpak's private data area. The wallpaper engine needs the compositor's `wlr-layer-shell` Wayland protocol to place a surface behind the desktop.
-
-There is a Flatpak integration blocker before this can be submitted as a working wallpaper app: Flatpak's normal Wayland socket filters out the layer-shell protocol. Its `inherit-wayland-socket` permission can bypass that filtering, but it is explicitly a sensitive permission that exposes the parent Wayland client's state, and it only works when the launcher passes an inherited `WAYLAND_SOCKET` file descriptor. The standard desktop launcher does not provide that descriptor on the tested system. In that launch path, the Studio can edit wallpapers but cannot apply them. GNOME and X11 also do not provide the layer-shell protocol. The native install works on compatible compositors such as Hyprland, Sway, niri, river, Wayfire, and labwc.
-
-The manifest targets the current Flathub GNOME 51 runtime. It still needs a pinned source revision and a passing Flathub linter run against the final committed source before submission. Flathub requires graphical apps to ship valid AppStream metadata and screenshots, and reviews submissions through its GitHub submission repository; see [Flathub's submission guide](https://docs.flathub.org/docs/for-app-authors/submission).
-
-For local packaging experiments, install `flatpak-builder`, the GNOME 51 SDK, and runtime, then run:
-
-```sh
-flatpak-builder --user --install --force-clean build-dir io.github.cyoren.asciipaper.yml
-flatpak run io.github.cyoren.asciipaper
-```
-
-The manifest source currently tracks `main` for local development. A publishable build needs an immutable upstream source revision, screenshots, a clean lint/build on both supported architectures, and a solution accepted by Flathub for the Wayland protocol restriction.
-
 ## Notes
 
-- One full-screen surface per monitor; monitors plugged in later get one too.
-- Uses the compositor's `background` layer, so it sits under Omarchy's shell, bars and windows. When fully covered, WebKit stops rendering, so it costs ~0 CPU while you work.
-- Omarchy theme changes don't touch it; `asciipaper set …` is the only knob.
-- For AI agents: see [`skills/asciipaper/SKILL.md`](skills/asciipaper/SKILL.md) — install with `npx skills add cYoren/asciipaper`.
+- One background surface per monitor, including monitors plugged in later. It sits under your bars and windows and never takes the keyboard.
+- The built-in scenes' shaders exist twice: in `wallpapers/*.html` (web) and `native/presets.c` (native). Change both together.
+- `asciipaper-engine --snapshot out.png` renders any wallpaper offscreen, without a compositor (thumbnails, tests).
+- Flatpak: the manifest builds, but Flatpak's Wayland socket filters out layer-shell, so a Flatpak can edit and export wallpapers but not show them. Use the native package.
+- For AI agents: [`skills/asciipaper/SKILL.md`](skills/asciipaper/SKILL.md), or `npx skills add cYoren/asciipaper`.
 
 ## Credits
 
-- `wallpapers/fluid.html` is the [asciify.org Fluid background](https://asciify.org/docs/backgrounds/fluid) running offline: `FluidField` + `paintLiquidSource` ported from [asciify-engine](https://github.com/ayangabryl/asciify-engine) `src/surface/fluid-field.ts`, glyphs rendered by the unmodified engine (`wallpapers/lib/asciify-core.js`, v4.1.0). By [ayangabryl](https://github.com/ayangabryl), MIT — `licenses/asciify-engine-MIT.txt`.
-- Background layer via [gtk4-layer-shell](https://github.com/wmww/gtk4-layer-shell).
+- `fluid` is the [asciify.org Fluid background](https://asciify.org/docs/backgrounds/fluid), offline: `FluidField` and `paintLiquidSource` ported from [asciify-engine](https://github.com/ayangabryl/asciify-engine) by [ayangabryl](https://github.com/ayangabryl), MIT ([`licenses/asciify-engine-MIT.txt`](licenses/asciify-engine-MIT.txt)). Its glyph table comes from the unmodified engine (`wallpapers/lib/asciify-core.js`).
+- Layer-shell protocol from [wlr-protocols](https://gitlab.freedesktop.org/wlroots/wlr-protocols); the Studio's background layer through [gtk4-layer-shell](https://github.com/wmww/gtk4-layer-shell).
+- Posts on X are fetched through [FxTwitter](https://github.com/FixTweet/FxTwitter). Only port media you have the right to use.
 
 ## License
 
