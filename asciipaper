@@ -14,9 +14,9 @@ Usage:
   asciipaper set fluid       save the choice and restart the service
   asciipaper list            list presets
   asciipaper import SOURCE [NAME]  port a picture, GIF or video (file, URL or X/Twitter post) into an ASCII wallpaper
-  asciipaper create NAME     copy the editable HTML starter into your library
+  asciipaper create NAME [--html]  start a shader wallpaper (or an HTML one) in your library
   asciipaper preview NAME    open a wallpaper in a normal window; reloads when you save
-  asciipaper export lively NAME [OUTPUT.zip]  package HTML for Windows Lively
+  asciipaper export NAME [OUTPUT.zip]  one ZIP for Wallpaper Engine / Lively (Windows) and Plash (macOS)
 """
 import os
 import json
@@ -30,9 +30,11 @@ import tempfile
 import unicodedata
 import html
 import struct
+import urllib.error
 import urllib.request
 import time
 import zipfile
+import zlib
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -207,55 +209,6 @@ def copy_local_assets(source, destination_root):
         if not destination.exists():
             shutil.copy2(asset, destination)
 
-
-def export_lively(target, destination=None):
-    """Package a local HTML wallpaper for Lively Wallpaper on Windows."""
-    url = resolve(target)
-    parsed = urlparse(url)
-    if parsed.scheme != "file":
-        sys.exit("asciipaper: Lively export requires a local HTML wallpaper")
-    source = Path(unquote(parsed.path)).resolve()
-    if not source.is_file():
-        sys.exit(f"asciipaper: wallpaper file not found: {source}")
-    name = re.sub(r"[^A-Za-z0-9 _-]", "", source.stem).strip() or "ASCII Wallpaper"
-    output = Path(destination).expanduser() if destination else Path.cwd() / f"{name}.lively.zip"
-    output = output.resolve()
-    output.parent.mkdir(parents=True, exist_ok=True)
-
-    lively_bridge = ("<script>" + engine_script(ENGINE_DEFAULTS) +
-                     "\nwindow.livelyPropertyListener = (name, value) => asciipaper.set({[name]: Number(value)});</script>")
-
-    with tempfile.TemporaryDirectory(prefix="asciipaper-lively-") as temporary:
-        root = Path(temporary)
-        html = source.read_text(encoding="utf-8")
-        head = re.search(r"<head\b[^>]*>", html, re.IGNORECASE)
-        doctype = re.search(r"<!doctype\b[^>]*>", html, re.IGNORECASE)
-        at = head.end() if head else doctype.end() if doctype else 0
-        html = html[:at] + lively_bridge + html[at:]
-        (root / "index.html").write_text(html, encoding="utf-8")
-
-        for asset in local_assets(source):
-            bundled = root / asset.relative_to(source.parent)
-            bundled.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(asset, bundled)
-
-        info = {"AppVersion": "2.0.7.0", "Title": name, "Thumbnail": None,
-                "Preview": None, "Desc": "Interactive ASCII wallpaper created with asciipaper.",
-                "Author": None, "License": "MIT", "Contact": None, "Type": 1,
-                "FileName": "index.html", "Arguments": None, "IsAbsolutePath": False}
-        (root / "LivelyInfo.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
-        properties = {
-            "fps": {"max": 60, "min": 10, "tick": 1, "text": "Frame rate", "type": "slider", "value": 24},
-            "idleFps": {"max": 60, "min": 1, "tick": 1, "text": "Frame rate when idle", "type": "slider", "value": 12},
-            "quality": {"max": 2, "min": 0.5, "tick": 0.1, "text": "Render quality", "type": "slider", "value": 1},
-            "pointer": {"max": 2, "min": 0, "tick": 0.1, "text": "Pointer response", "type": "slider", "value": 1},
-        }
-        (root / "LivelyProperties.json").write_text(json.dumps(properties, indent=2) + "\n", encoding="utf-8")
-        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for file in root.rglob("*"):
-                if file.is_file():
-                    archive.write(file, file.relative_to(root))
-    return output
 
 # ---- Wallpaper specs: JSON that describes a wallpaper (a shader, or media through lib/media.glsl, plus
 # its look). asciipaper-engine runs them natively; spec_html() makes the web version beside them.
@@ -463,6 +416,103 @@ def import_media(source, name=None):
     return name
 
 
+THUMBNAILS = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "asciipaper/thumbnails"
+_thumbnail_slots = threading.Semaphore(2)
+
+
+def request_thumbnail(name, callback):
+    """Render name offscreen with asciipaper-engine (cached until its files change); callback(path)
+    runs on a worker thread. Wallpapers the engine can't draw (HTML) get no thumbnail."""
+    args = engine_args(name)
+    if not args:
+        return
+    files = [Path(args[0])]
+    spec = spec_file(name)
+    if spec:
+        data = read_spec(spec)
+        files.append(spec)
+        if isinstance(data.get("media"), str):
+            files.append(spec.parent / f"{data['media']}.frames")
+        if isinstance(data.get("shader"), str) and data["shader"].endswith(".glsl"):
+            files.append(spec.parent / data["shader"])
+    stamp = "-".join(str(int(f.stat().st_mtime)) for f in files if f.exists())
+    path = THUMBNAILS / f"{re.sub(r'[^A-Za-z0-9_-]', '_', name)}-{zlib.crc32(stamp.encode()):08x}.png"
+    if path.exists():
+        callback(path)
+        return
+    def work():
+        with _thumbnail_slots:
+            THUMBNAILS.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_suffix(".tmp.png")
+            try:
+                subprocess.run([*args, "--snapshot", str(temporary), "--size", "960x540", "--seconds", "0.6" if spec else "4"],
+                               env=engine_env(), timeout=60, capture_output=True)
+            except (OSError, subprocess.TimeoutExpired):
+                return
+            if temporary.exists():
+                temporary.replace(path)
+                callback(path)
+    threading.Thread(target=work, daemon=True).start()
+
+
+def export_web(target, destination=None):
+    """One ZIP that runs on Windows and macOS: index.html + assets, with the settings bridges for
+    Wallpaper Engine (project.json) and Lively (LivelyInfo.json); Plash on macOS opens index.html."""
+    url = resolve(target)
+    parsed = urlparse(url)
+    if parsed.scheme != "file":
+        sys.exit("asciipaper: only local wallpapers can be exported")
+    source = Path(unquote(parsed.path)).resolve()
+    title = re.sub(r"[^A-Za-z0-9 _-]", "", source.stem).strip() or "ASCII Wallpaper"
+    output = Path(destination).expanduser() if destination else Path.cwd() / f"{title}.asciipaper.zip"
+    output = output.resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    properties = {
+        "fps": ("Frame rate", 10, 60, 1, 24), "idleFps": ("Frame rate when idle", 1, 60, 1, 12),
+        "quality": ("Render quality", 0.5, 2, 0.1, 1), "pointer": ("Pointer response", 0, 2, 0.1, 1)}
+    bridge = ("<script>" + engine_script(ENGINE_DEFAULTS) + """
+window.livelyPropertyListener = (name, value) => asciipaper.set({[name]: Number(value)});
+window.wallpaperPropertyListener = {applyUserProperties(p) {
+  for (const [k, v] of Object.entries(p)) if (v && 'value' in v) asciipaper.set({[k]: Number(v.value)});
+}};</script>""")
+    with tempfile.TemporaryDirectory(prefix="asciipaper-export-") as temporary:
+        root = Path(temporary)
+        page = source.read_text(encoding="utf-8")
+        head = re.search(r"<head\b[^>]*>", page, re.IGNORECASE)
+        doctype = re.search(r"<!doctype\b[^>]*>", page, re.IGNORECASE)
+        at = head.end() if head else doctype.end() if doctype else 0
+        (root / "index.html").write_text(page[:at] + bridge + page[at:], encoding="utf-8")
+        for asset in local_assets(source):
+            bundled = root / asset.relative_to(source.parent)
+            bundled.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(asset, bundled)
+        info = {"AppVersion": "2.0.7.0", "Title": title, "Thumbnail": None, "Preview": None,
+                "Desc": "Interactive ASCII wallpaper made with asciipaper.", "Author": None, "License": None,
+                "Contact": "https://github.com/cYoren/asciipaper", "Type": 1, "FileName": "index.html",
+                "Arguments": None, "IsAbsolutePath": False}
+        (root / "LivelyInfo.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
+        lively = {k: {"text": t, "type": "slider", "min": lo, "max": hi, "tick": step, "value": v}
+                  for k, (t, lo, hi, step, v) in properties.items()}
+        (root / "LivelyProperties.json").write_text(json.dumps(lively, indent=2) + "\n", encoding="utf-8")
+        project = {"file": "index.html", "title": title, "type": "web",
+                   "description": "Interactive ASCII wallpaper made with asciipaper (https://github.com/cYoren/asciipaper).",
+                   "general": {"properties": {k: {"order": i, "text": t, "type": "slider", "min": lo, "max": hi,
+                                                  "value": v, "fraction": step < 1, "precision": 1 if step < 1 else 0}
+                                              for i, (k, (t, lo, hi, step, v)) in enumerate(properties.items())}}}
+        (root / "project.json").write_text(json.dumps(project, indent=2) + "\n", encoding="utf-8")
+        (root / "README.txt").write_text(
+            f"{title}: an interactive ASCII wallpaper made with asciipaper.\n\n"
+            "Windows, Wallpaper Engine: Create Wallpaper > Open wallpaper > choose project.json.\n"
+            "Windows, Lively Wallpaper: drag this ZIP onto Lively.\n"
+            "macOS, Plash: unzip, then Add Website > the index.html file.\n"
+            "Linux: asciipaper import is not needed; open index.html with `asciipaper`.\n", encoding="utf-8")
+        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for file in root.rglob("*"):
+                if file.is_file():
+                    archive.write(file, file.relative_to(root))
+    return output
+
+
 def resolve(target):
     if target in PRESETS:
         return PRESETS[target]
@@ -612,9 +662,10 @@ def run(target, studio=False, preview=False):
         gi.require_version("Gtk", "4.0")
         gi.require_version("WebKit", "6.0")
         gi.require_version("Gtk4LayerShell", "1.0")
-        from gi.repository import Gdk, Gio, GLib, Gtk, WebKit, Gtk4LayerShell as Layer
+        gi.require_version("Adw", "1")
+        from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk, WebKit, Gtk4LayerShell as Layer
     except (ImportError, ValueError) as e:
-        sys.exit(f"asciipaper: {e}\nInstall: sudo pacman -S --needed webkitgtk-6.0 python-gobject gtk4-layer-shell")
+        sys.exit(f"asciipaper: {e}\nInstall: sudo pacman -S --needed webkitgtk-6.0 python-gobject gtk4-layer-shell libadwaita")
 
     settings = WebKit.Settings(enable_webgl=True, hardware_acceleration_policy=WebKit.HardwareAccelerationPolicy.ALWAYS,
                                allow_file_access_from_file_urls=True, enable_developer_extras=preview,
@@ -778,7 +829,8 @@ def run(target, studio=False, preview=False):
     watch_folder(resolve(target))
     watch_hyprland(lambda: GLib.idle_add(refresh_paused))
     studio_window_ref = None
-    app = Gtk.Application(application_id=None if preview else "io.github.cyoren.asciipaper",
+    unique = not preview and not os.environ.get("ASCIIPAPER_STUDIO_SNAPSHOT")
+    app = Adw.Application(application_id="io.github.cyoren.asciipaper" if unique else None,
                           flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
 
     def studio_window(app):
@@ -786,228 +838,504 @@ def run(target, studio=False, preview=False):
         if studio_window_ref is not None:
             studio_window_ref.present()
             return
-        presets = list(PRESETS)
-        if USER_WALLPAPERS.is_dir():
-            presets.extend(sorted(p.stem for p in USER_WALLPAPERS.glob("*.html")))
-        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        root.set_margin_top(22); root.set_margin_bottom(22)
-        root.set_margin_start(22); root.set_margin_end(22)
-        title = Gtk.Label(label="asciipaper")
-        title.add_css_class("title-1"); title.set_halign(Gtk.Align.START)
-        subtitle = Gtk.Label(label="Choose a live wallpaper, or make one from HTML, Canvas, CSS, JavaScript, or WebGL.")
-        subtitle.set_wrap(True); subtitle.set_halign(Gtk.Align.START)
-        model = Gtk.StringList.new(presets)
-        picker = Gtk.DropDown.new(model, None)
-        picker.set_selected(presets.index(current_target) if current_target in presets else 0)
-        status_text = ("Pointer input reaches wallpapers when the cursor is over the desktop." if layer_supported else
-                       "This compositor has no layer-shell support. You can still create and edit wallpapers here.")
-        status = Gtk.Label(label=status_text)
-        status.set_wrap(True); status.set_halign(Gtk.Align.START)
-        root.append(title); root.append(subtitle); root.append(picker)
+        win = Adw.ApplicationWindow(application=app, title="asciipaper", default_width=1000, default_height=860)
+        studio_window_ref = win
+        def closed(*_):
+            nonlocal studio_window_ref
+            studio_window_ref = None
+            return False
+        win.connect("close-request", closed)
+        toasts = Adw.ToastOverlay()
+        toast = lambda text: toasts.add_toast(Adw.Toast(title=GLib.markup_escape_text(text), timeout=4))
+        view = Adw.ToolbarView()
+        header = Adw.HeaderBar()
+        view.add_top_bar(header)
+        if not layer_supported:
+            banner = Adw.Banner(title="This desktop can't show live wallpapers (no layer-shell). You can still make and export them.",
+                                revealed=True)
+            view.add_top_bar(banner)
 
-        apply_button = Gtk.Button(label="Apply wallpaper")
-        apply_button.add_css_class("suggested-action")
-        apply_button.set_sensitive(layer_supported)
-        def apply_selected(*_):
-            set_target(model.get_string(picker.get_selected()))
+        # ---- Header: add (port media, links, HTML, shaders) and pause.
+        menu = Gio.Menu()
+        menu.append("Picture, GIF or video…", "win.port-file")
+        menu.append("From a link (X, Twitter, any media URL)…", "win.port-link")
+        section = Gio.Menu()
+        section.append("HTML wallpaper…", "win.import-html")
+        section.append("New shader wallpaper…", "win.new-shader")
+        section.append("Open the wallpaper folder", "win.open-folder")
+        menu.append_section(None, section)
+        add_button = Gtk.MenuButton(icon_name="list-add-symbolic", menu_model=menu,
+                                    tooltip_text="Add a wallpaper: port a picture, GIF or video, or start from code")
+        add_button.add_css_class("suggested-action")
+        header.pack_start(add_button)
+        pause_button = Gtk.ToggleButton(icon_name="media-playback-pause-symbolic", tooltip_text="Pause the wallpaper")
+        header.pack_end(pause_button)
+
+        page = Adw.PreferencesPage()
+        toasts.set_child(page)
+        view.set_content(toasts)
+        win.set_content(view)
+
+        # ---- Gallery: every wallpaper as a card with a live-rendered thumbnail. Click to apply.
+        gallery = Adw.PreferencesGroup(title="Wallpapers", description="Choose one to put it on your desktop. "
+                                       "Drop a picture, GIF or video anywhere here to port it.")
+        flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.SINGLE, homogeneous=True, max_children_per_line=3,
+                           min_children_per_line=2, row_spacing=12, column_spacing=12, activate_on_single_click=True)
+        gallery.add(flow)
+        page.add(gallery)
+        cards = {}   # name -> FlowBoxChild
+
+        def card(name):
+            picture = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, can_shrink=True)
+            picture.set_size_request(176, 99)
+            overlay = Gtk.Overlay(child=picture, overflow=Gtk.Overflow.HIDDEN)
+            overlay.add_css_class("card")
+            placeholder = Gtk.Label(label="HTML" if not engine_args(name) else "…", opacity=0.5)
+            placeholder.add_css_class("title-2")
+            overlay.add_overlay(placeholder)
+            label = Gtk.Label(label=name, ellipsize=3, xalign=0, margin_top=6)
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            box.append(overlay); box.append(label)
+            child = Gtk.FlowBoxChild(child=box)
+            child.wallpaper = name
+            def shown(path):
+                picture.set_filename(str(path)); placeholder.set_visible(False)
+                return False
+            request_thumbnail(name, lambda path: GLib.idle_add(shown, path))
+            return child
+
+        def refresh_gallery(select=None):
+            for child in list(cards.values()):
+                flow.remove(child)
+            cards.clear()
+            for name in library():
+                if name == "asciify":   # an alias of fluid
+                    continue
+                cards[name] = card(name)
+                flow.append(cards[name])
+            chosen = cards.get(select or current_target)
+            if chosen:
+                flow.select_child(chosen)
+
+        def apply(name):
+            set_target(name)
             show_wallpaper(app)
-            status.set_text("Wallpaper applied to your monitors.")
+            pause_button.set_active(False)
+            load_look()
+            toast(f"{name} is on your desktop" if layer_supported else f"Selected {name}")
 
-        apply_button.connect("clicked", apply_selected)
-        root.append(apply_button)
+        flow.connect("child-activated", lambda _flow, child: apply(child.wallpaper))
 
-        import_button = Gtk.Button(label="Import an HTML wallpaper…")
-        root.append(import_button)
+        # ---- Look: the selected spec wallpaper's settings, written to its JSON; the engine redraws live.
+        look = Adw.PreferencesGroup(title="Look", description="Changes appear on your desktop as you make them.")
+        page.add(look)
+        look_rows, look_state = [], {"path": None, "spec": None, "defaults": {}, "loading": False, "pending": 0}
 
-        creator = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        name_entry = Gtk.Entry(placeholder_text="Name for your wallpaper")
-        name_entry.set_hexpand(True)
-        create_button = Gtk.Button(label="Create from starter")
-        creator.append(name_entry); creator.append(create_button); root.append(creator)
+        def save_look():
+            look_state["pending"] = 0
+            path, spec = look_state["path"], look_state["spec"]
+            if path and spec is not None:
+                path.write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                spec_html(path)
+            return False
 
-        edit_button = Gtk.Button(label="Edit selected wallpaper")
-        root.append(edit_button)
+        def look_changed(key, value):
+            if look_state["loading"] or look_state["spec"] is None:
+                return
+            spec = look_state["spec"]
+            if key.startswith("uniforms."):
+                spec.setdefault("uniforms", {})[key[9:]] = value
+            else:
+                spec[key] = value
+            if not look_state["pending"]:
+                look_state["pending"] = GLib.timeout_add(150, save_look)
 
-        export_button = Gtk.Button(label="Export for Windows (Lively)…")
-        root.append(export_button)
+        def current(key, fallback):
+            spec = look_state["spec"] or {}
+            if key.startswith("uniforms."):
+                return spec.get("uniforms", {}).get(key[9:], look_state["defaults"].get(key[9:], fallback))
+            return spec.get(key, fallback)
 
-        performance = Gtk.Frame(label="Engine controls")
-        controls = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        controls.set_margin_top(8); controls.set_margin_bottom(8)
-        controls.set_margin_start(10); controls.set_margin_end(10)
-        fps = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 10, 60, 1)
-        fps.set_digits(0); fps.set_value(engine_options["fps"]); fps.set_hexpand(True)
-        fps.set_tooltip_text("Maximum animation rate. Lower values reduce CPU use.")
-        idle_fps = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 1, 60, 1)
-        idle_fps.set_digits(0); idle_fps.set_value(engine_options["idleFps"]); idle_fps.set_hexpand(True)
-        idle_fps.set_tooltip_text("Animation rate while the pointer is away from the desktop. Most of the day, this is the rate that matters.")
-        quality = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0.5, 2, 0.1)
-        quality.set_digits(1); quality.set_value(engine_options["quality"]); quality.set_hexpand(True)
-        quality.set_tooltip_text("Canvas pixel density. Lower values render fewer pixels.")
-        pointer = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 2, 0.1)
-        pointer.set_digits(1); pointer.set_value(engine_options["pointer"]); pointer.set_hexpand(True)
-        pointer.set_tooltip_text("Pointer reaction strength for wallpapers that use the asciipaper settings API.")
-        controls.append(Gtk.Label(label="Animation rate (frames per second)", xalign=0)); controls.append(fps)
-        controls.append(Gtk.Label(label="Animation rate when idle", xalign=0)); controls.append(idle_fps)
-        controls.append(Gtk.Label(label="Rendering quality", xalign=0)); controls.append(quality)
-        controls.append(Gtk.Label(label="Pointer response", xalign=0)); controls.append(pointer)
-        performance.set_child(controls); root.append(performance)
+        def slider_row(title, key, low, high, step, fallback, subtitle=None, media=True):
+            row = Adw.ActionRow(title=title, subtitle=subtitle or "")
+            scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, low, high, step)
+            scale.set_size_request(240, -1); scale.set_draw_value(True); scale.set_valign(Gtk.Align.CENTER)
+            scale.set_digits(0 if step >= 1 else 2)
+            scale.connect("value-changed", lambda s: look_changed(key, round(s.get_value(), 2)))
+            row.add_suffix(scale)
+            look_rows.append((row, media, lambda: scale.set_value(float(current(key, fallback)))))
+            look.add(row)
 
-        usage = Gtk.Label(label="Wallpaper engine CPU: measuring…")
-        usage.set_halign(Gtk.Align.START)
-        usage.set_wrap(True)
-        root.append(usage)
-        optimize_button = Gtk.Button(label="Apply recommended settings")
-        optimize_button.set_sensitive(False)
-        root.append(optimize_button)
-        stop_button = Gtk.Button(label="Pause wallpaper")
-        root.append(stop_button)
-        root.append(status)
+        def combo_row(title, key, labels, values, fallback, media=True, subtitle=None):
+            row = Adw.ComboRow(title=title, subtitle=subtitle or "", model=Gtk.StringList.new(labels))
+            def picked(r, _):
+                look_changed(key, values[r.get_selected()])
+            row.connect("notify::selected", picked)
+            def load():
+                value = current(key, fallback)
+                row.set_selected(values.index(value) if value in values else 0)
+            look_rows.append((row, media, load))
+            look.add(row)
 
-        studio = Gtk.ApplicationWindow(application=app, title="asciipaper — Live ASCII Wallpapers")
-        studio_window_ref = studio
-        studio.set_default_size(620, 720)
-        scroller = Gtk.ScrolledWindow()
-        scroller.set_child(root)
-        studio.set_child(scroller)
+        def switch_row(title, key, subtitle, media=True):
+            row = Adw.SwitchRow(title=title, subtitle=subtitle)
+            row.connect("notify::active", lambda r, _: look_changed(key, 1 if r.get_active() else 0))
+            look_rows.append((row, media, lambda: row.set_active(bool(current(key, 0)))))
+            look.add(row)
 
-        def pause_wallpaper(*_):
-            close_views(); stop_engine()
-            if service_elsewhere():
-                subprocess.run(["systemctl", "--user", "stop", SERVICE])
-            status.set_text("Wallpaper paused. Choose Apply wallpaper to start one again.")
+        def color_row(title, key, fallback, media=True, subtitle=None):
+            row = Adw.ActionRow(title=title, subtitle=subtitle or "")
+            button = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog(with_alpha=False), valign=Gtk.Align.CENTER)
+            def picked(b, _):
+                c = b.get_rgba()
+                look_changed(key, "#%02x%02x%02x" % (round(c.red * 255), round(c.green * 255), round(c.blue * 255)))
+            button.connect("notify::rgba", picked)
+            def load():
+                rgba = Gdk.RGBA(); rgba.parse(str(current(key, fallback))); button.set_rgba(rgba)
+            row.add_suffix(button)
+            look_rows.append((row, media, load))
+            look.add(row)
 
-        stop_button.connect("clicked", pause_wallpaper)
+        charset_names = list(CHARSETS)
+        combo_row("Characters", "charset", [n.capitalize() for n in charset_names], [CHARSETS[n] for n in charset_names],
+                  CHARSETS["classic"], media=False, subtitle="From light to dense")
+        slider_row("Character size", "cell", 4, 24, 1, 8, media=False)
+        combo_row("Weight", "weight", ["Light", "Regular", "Bold", "Heavy"], [300, 400, 700, 900], 400, media=False)
+        slider_row("Glow", "fill", 0, 1, 0.05, 0, "Each character's colour, faintly, behind it", media=False)
+        color_row("Background", "background", "#000000", media=False)
+        combo_row("Colours", "uniforms.colorMode", ["The picture's own", "One colour", "Gradient"], [0, 1, 2], 0)
+        color_row("Tint", "uniforms.tint", "#e8b900", subtitle="For dark or grey parts, and the one-colour and gradient modes")
+        color_row("Second colour", "uniforms.tint2", "#ff3355", subtitle="The gradient's bright end")
+        slider_row("Colour lift", "uniforms.vivid", 0, 1, 0.05, 0.5, "Brighten colours towards full strength")
+        slider_row("Contrast", "uniforms.contrast", 0.2, 4, 0.05, 1)
+        slider_row("Brightness", "uniforms.brightness", -1, 1, 0.05, 0)
+        switch_row("Invert", "uniforms.invert", "Give the dense characters to the dark parts")
+        switch_row("Fill the screen", "uniforms.fit", "Crop to cover the whole screen instead of showing everything")
+        slider_row("Backdrop", "uniforms.backdrop", 0, 1, 0.05, 0.3, "A dim copy behind, where the picture doesn't reach")
+        slider_row("Zoom", "uniforms.zoom", 0.5, 3, 0.05, 1)
+        slider_row("Hover lens", "uniforms.lens", 0, 2, 0.1, 1, "Magnify around the pointer")
+        slider_row("Click ripple", "uniforms.ripple", 0, 2, 0.1, 1)
+        slider_row("Playback speed", "uniforms.speed", 0.1, 3, 0.05, 1)
 
-        def append_preset(name):
-            if name not in presets:
-                presets.append(name); model.append(name)
-            picker.set_selected(presets.index(name))
+        def load_look():
+            path = spec_file(current_target) if current_target else None
+            look.set_visible(bool(path))
+            if not path:
+                look_state.update(path=None, spec=None)
+                return
+            spec = read_spec(path)
+            try:
+                _, defaults = spec_shader(spec, path.parent)
+            except (OSError, SystemExit):
+                defaults = {}
+            media = bool(spec.get("media"))
+            look_state.update(path=path, spec=spec, defaults=defaults, loading=True)
+            for row, media_only, load in look_rows:
+                row.set_visible(media or not media_only)
+                load()
+            look_state["loading"] = False
 
+        # ---- Performance.
+        performance = Adw.PreferencesGroup(title="Performance")
+        page.add(performance)
+        renderer = Adw.ComboRow(title="Renderer", model=Gtk.StringList.new(["Native (lighter)", "Web (WebKit)"]),
+                                subtitle="Built-in and ported wallpapers can run natively; HTML ones always use WebKit")
+        renderer.set_selected(1 if engine_options.get("renderer") == "web" else 0)
+        performance.add(renderer)
+        def renderer_changed(row, _):
+            set_engine_options({"renderer": "web" if row.get_selected() else "native"})
+            show_wallpaper(app)
+        renderer.connect("notify::selected", renderer_changed)
+
+        scales = {}
+        for key, title, subtitle, low, high, step in (
+                ("fps", "Frame rate", "While the pointer is on the desktop", 10, 60, 1),
+                ("idleFps", "Idle frame rate", "The rest of the time: most of the day, this is the one that matters", 1, 60, 1),
+                ("quality", "Render quality", "Pixel density; lower draws fewer pixels", 0.5, 2, 0.1),
+                ("pointer", "Pointer response", "How strongly wallpapers react to the pointer", 0, 2, 0.1)):
+            row = Adw.ActionRow(title=title, subtitle=subtitle)
+            scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, low, high, step)
+            scale.set_digits(0 if step >= 1 else 1); scale.set_draw_value(True); scale.set_size_request(240, -1)
+            scale.set_valign(Gtk.Align.CENTER)
+            scale.set_value(engine_options[key])
+            row.add_suffix(scale)
+            performance.add(row)
+            scales[key] = scale
         def options_changed(*_):
-            set_engine_options({"fps": round(fps.get_value()), "idleFps": round(idle_fps.get_value()),
-                                "quality": round(quality.get_value(), 1),
-                                "pointer": round(pointer.get_value(), 1)})
-
-        fps.connect("value-changed", options_changed)
-        idle_fps.connect("value-changed", options_changed)
-        quality.connect("value-changed", options_changed)
-        pointer.connect("value-changed", options_changed)
-
-        cpu_baseline = (None, None)
-
-        def apply_recommendation(*_):
-            cpu = latest_cpu[0]
-            fps_target = min(engine_options["fps"], 18 if cpu > 35 else 20)
-            quality_target = (max(0.5, round(engine_options["quality"] * 0.8, 1))
-                              if cpu > 35 else engine_options["quality"])
-            fps.set_value(fps_target)
-            quality.set_value(quality_target)
-
-        optimize_button.connect("clicked", apply_recommendation)
-        latest_cpu = [0.0]
+            set_engine_options({"fps": round(scales["fps"].get_value()), "idleFps": round(scales["idleFps"].get_value()),
+                                "quality": round(scales["quality"].get_value(), 1),
+                                "pointer": round(scales["pointer"].get_value(), 1)})
+        for scale in scales.values():
+            scale.connect("value-changed", options_changed)
+        usage = Adw.ActionRow(title="Engine CPU", subtitle="Measuring…")
+        recommend = Gtk.Button(label="Use lighter settings", valign=Gtk.Align.CENTER, sensitive=False)
+        usage.add_suffix(recommend)
+        performance.add(usage)
+        cpu_state = {"baseline": (None, None), "cpu": 0.0}
 
         def refresh_cpu():
-            nonlocal cpu_baseline
+            if studio_window_ref is not win:
+                return False   # the Studio was closed
             root = os.getpid()
             if not views and not engine["process"] and service_elsewhere():   # the service draws; measure it
                 root = int(subprocess.run(["systemctl", "--user", "show", "-p", "MainPID", "--value", SERVICE],
                                           capture_output=True, text=True).stdout.strip() or 0) or root
-            cpu, cpu_baseline = app_process_cpu(root, cpu_baseline)
-            latest_cpu[0] = cpu
-            target_fps = min(engine_options["fps"], 18 if cpu > 35 else 20)
-            target_quality = (max(0.5, round(engine_options["quality"] * 0.8, 1))
-                              if cpu > 35 else engine_options["quality"])
-            suggestion = ("High: lower animation rate or rendering quality." if cpu > 35 else
-                          "Moderate: lower the frame rate if you want to save power." if cpu > 18 else
-                          "Comfortable for this display. Increase quality or frame rate if desired.")
-            optimize_button.set_sensitive(cpu > 18)
-            usage.set_text(f"Wallpaper engine CPU: {cpu:.1f}% of one core. {suggestion} "
-                           f"Suggested: {target_fps} fps, quality {target_quality:.1f}.")
+            cpu, cpu_state["baseline"] = app_process_cpu(root, cpu_state["baseline"])
+            cpu_state["cpu"] = cpu
+            verdict = ("high" if cpu > 35 else "moderate" if cpu > 18 else "light")
+            usage.set_subtitle(f"{cpu:.1f}% of one core: {verdict}")
+            recommend.set_sensitive(cpu > 18)
             return True
 
-        GLib.timeout_add_seconds(1, refresh_cpu)
+        def lighter(*_):
+            scales["fps"].set_value(min(engine_options["fps"], 20))
+            scales["idleFps"].set_value(min(engine_options["idleFps"], 10))
+            if cpu_state["cpu"] > 35:
+                scales["quality"].set_value(max(0.5, round(engine_options["quality"] * 0.8, 1)))
+        recommend.connect("clicked", lighter)
+        GLib.timeout_add_seconds(2, refresh_cpu)
 
-        def create_wallpaper(*_):
-            name = name_entry.get_text().strip()
-            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _-]{0,47}", name) or name in PRESETS:
-                status.set_text("Choose a unique name using letters, numbers, spaces, _ or -. (48 characters max)")
-                return
-            USER_WALLPAPERS.mkdir(parents=True, exist_ok=True)
-            destination = USER_WALLPAPERS / f"{name}.html"
-            if destination.exists():
-                status.set_text("That name already exists. Choose another name.")
-                return
-            ensure_user_api()
-            shutil.copyfile(LOCAL / "starter.html", destination)
-            append_preset(name)
-            set_target(name)
-            show_wallpaper(app)
-            status.set_text(f"Created and applied {name}. Select it and choose Edit selected wallpaper to open it in your editor.")
+        # ---- Share.
+        share = Adw.PreferencesGroup(title="Share and edit")
+        page.add(share)
+        export_row = Adw.ActionRow(title="Export for Windows and macOS",
+                                   subtitle="One ZIP for Wallpaper Engine, Lively Wallpaper or Plash", activatable=True)
+        export_row.add_suffix(Gtk.Image(icon_name="document-save-symbolic"))
+        share.add(export_row)
+        edit_row = Adw.ActionRow(title="Open in your editor", subtitle="Wallpapers you made or ported", activatable=True)
+        edit_row.add_suffix(Gtk.Image(icon_name="document-edit-symbolic"))
+        share.add(edit_row)
+        delete_row = Adw.ActionRow(title="Delete this wallpaper", activatable=True)
+        delete_row.add_css_class("error")
+        share.add(delete_row)
 
-        create_button.connect("clicked", create_wallpaper)
+        def selected_name():
+            chosen = flow.get_selected_children()
+            return chosen[0].wallpaper if chosen else current_target
 
-        def edit_selected(*_):
-            name = model.get_string(picker.get_selected())
-            path = USER_WALLPAPERS / f"{name}.html"
-            if not path.is_file():
-                status.set_text("Built-in wallpapers are examples. Create a copy to edit it.")
-                return
-            Gio.AppInfo.launch_default_for_uri(path.as_uri(), None)
-
-        edit_button.connect("clicked", edit_selected)
+        def user_file(name):
+            for suffix in (".json", ".html"):
+                if re.fullmatch(NAME_RE, name) and (USER_WALLPAPERS / f"{name}{suffix}").is_file():
+                    return USER_WALLPAPERS / f"{name}{suffix}"
+            return None
 
         def export_selected(*_):
-            selected_name = model.get_string(picker.get_selected())
-            chooser = Gtk.FileChooserNative.new("Export wallpaper for Lively", studio,
-                Gtk.FileChooserAction.SAVE, "Export", "Cancel")
-            chooser.set_current_name(f"{selected_name}.lively.zip")
-            def response(dialog, result):
-                if result == Gtk.ResponseType.ACCEPT:
-                    selected = dialog.get_file()
-                    try:
-                        output = export_lively(selected_name, selected.get_path())
-                        status.set_text(f"Exported {output}. Import the ZIP into Lively Wallpaper on Windows.")
-                    except (OSError, ValueError, RuntimeError) as error:
-                        status.set_text(f"Could not export wallpaper: {error}")
-                dialog.destroy()
-            chooser.connect("response", response); chooser.show()
+            name = selected_name()
+            dialog = Gtk.FileDialog(title="Export wallpaper", initial_name=f"{name}.asciipaper.zip")
+            def done(d, result):
+                try:
+                    target = d.save_finish(result)
+                except GLib.Error:
+                    return
+                try:
+                    toast(f"Exported {export_web(name, target.get_path()).name}")
+                except (OSError, ValueError, RuntimeError, SystemExit) as error:
+                    toast(f"Could not export: {getattr(error, 'code', None) or error}")
+            dialog.save(win, None, done)
+        export_row.connect("activated", export_selected)
 
-        export_button.connect("clicked", export_selected)
+        def edit_selected(*_):
+            path = user_file(selected_name())
+            if not path:
+                toast("Built-in wallpapers are read-only. Add a shader wallpaper to start your own.")
+                return
+            Gio.AppInfo.launch_default_for_uri(path.as_uri(), None)
+        edit_row.connect("activated", edit_selected)
+
+        def delete_selected(*_):
+            name = selected_name()
+            path = user_file(name)
+            if not path:
+                toast("Built-in wallpapers can't be deleted.")
+                return
+            confirm = Adw.AlertDialog(heading=f"Delete {name}?", body="Its file and any ported media are removed.")
+            confirm.add_response("cancel", "Cancel"); confirm.add_response("delete", "Delete")
+            confirm.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+            def answered(_dialog, response):
+                if response != "delete":
+                    return
+                if path.suffix == ".json":
+                    media = read_spec(path).get("media")
+                    if isinstance(media, str) and not Path(media).is_absolute():
+                        for file in ((path.parent / media), Path(f"{path.parent / media}.frames")):
+                            if file.resolve().is_relative_to(USER_WALLPAPERS.resolve()):
+                                file.unlink(missing_ok=True)
+                    path.with_suffix(".html").unlink(missing_ok=True)
+                path.unlink(missing_ok=True)
+                if name == current_target:
+                    apply(DEFAULT)
+                refresh_gallery()
+                toast(f"Deleted {name}")
+            confirm.connect("response", answered)
+            confirm.present(win)
+        delete_row.connect("activated", delete_selected)
+
+        def track_selection(*_):
+            own = bool(user_file(selected_name()))
+            edit_row.set_sensitive(own); delete_row.set_sensitive(own)
+        flow.connect("selected-children-changed", track_selection)
+
+        # ---- Adding wallpapers.
+        def port(source, name=None):
+            toast("Porting… this takes a few seconds")
+            def work():
+                try:
+                    result = import_media(source, name)
+                except SystemExit as error:
+                    result = RuntimeError(str(error.code))
+                except (OSError, ValueError, urllib.error.URLError) as error:
+                    result = error
+                GLib.idle_add(ported, result)
+            threading.Thread(target=work, daemon=True).start()
+
+        def ported(result):
+            if isinstance(result, Exception):
+                toast(f"Could not port it: {result}")
+                return False
+            refresh_gallery(select=result)
+            apply(result)
+            return False
+
+        def port_file(*_):
+            dialog = Gtk.FileDialog(title="Port a picture, GIF or video")
+            media_filter = Gtk.FileFilter(name="Pictures, GIFs and videos")
+            media_filter.add_mime_type("image/*"); media_filter.add_mime_type("video/*")
+            filters = Gio.ListStore.new(Gtk.FileFilter); filters.append(media_filter)
+            dialog.set_filters(filters)
+            def done(d, result):
+                try:
+                    port(d.open_finish(result).get_path())
+                except GLib.Error:
+                    pass
+            dialog.open(win, None, done)
+
+        def port_link(*_):
+            ask = Adw.AlertDialog(heading="Port from a link", body="A post on X or Twitter, or a direct link to a picture, GIF or video.")
+            entry = Gtk.Entry(placeholder_text="https://x.com/…/status/…", activates_default=True)
+            ask.set_extra_child(entry)
+            ask.add_response("cancel", "Cancel"); ask.add_response("port", "Port")
+            ask.set_response_appearance("port", Adw.ResponseAppearance.SUGGESTED)
+            ask.set_default_response("port")
+            def answered(_dialog, response):
+                link = entry.get_text().strip()
+                if response == "port" and re.match(r"https?://", link):
+                    port(link)
+                elif response == "port":
+                    toast("That doesn't look like a link")
+            ask.connect("response", answered)
+            ask.present(win)
+
+        def ask_name(heading, callback):
+            ask = Adw.AlertDialog(heading=heading, body="Letters, numbers, spaces, _ and -")
+            entry = Gtk.Entry(placeholder_text="my-wallpaper", activates_default=True)
+            ask.set_extra_child(entry)
+            ask.add_response("cancel", "Cancel"); ask.add_response("ok", "Create")
+            ask.set_response_appearance("ok", Adw.ResponseAppearance.SUGGESTED)
+            ask.set_default_response("ok")
+            def answered(_dialog, response):
+                name = entry.get_text().strip()
+                if response != "ok":
+                    return
+                if not re.fullmatch(NAME_RE, name) or name in PRESETS or user_file(name):
+                    toast("Choose a new name: letters, numbers, spaces, _ and -")
+                    return
+                callback(name)
+            ask.connect("response", answered)
+            ask.present(win)
+
+        def new_shader(*_):
+            def create(name):
+                USER_WALLPAPERS.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(LOCAL / "starter.glsl", USER_WALLPAPERS / f"{name}.glsl")
+                spec = {"title": name, "shader": f"{name}.glsl", "charset": CHARSETS["asciify"], "cell": 10,
+                        "aspect": 0.6, "background": "#080909", "fill": 0.1, "uniforms": {"speed": 1}}
+                path = USER_WALLPAPERS / f"{name}.json"
+                path.write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
+                ensure_user_api(); spec_html(path)
+                refresh_gallery(select=name); apply(name)
+                Gio.AppInfo.launch_default_for_uri((USER_WALLPAPERS / f"{name}.glsl").as_uri(), None)
+                toast("Edit the .glsl file: every save shows on your desktop")
+            ask_name("New shader wallpaper", create)
 
         def import_html(*_):
-            chooser = Gtk.FileChooserNative.new("Import an HTML wallpaper", studio,
-                Gtk.FileChooserAction.OPEN, "Import", "Cancel")
-            html_filter = Gtk.FileFilter(); html_filter.set_name("HTML files"); html_filter.add_mime_type("text/html"); html_filter.add_pattern("*.html")
-            chooser.add_filter(html_filter)
-            def response(dialog, result):
-                if result == Gtk.ResponseType.ACCEPT:
-                    selected = dialog.get_file()
-                    source_name = Path(selected.get_basename() or "wallpaper.html").stem
-                    name = re.sub(r"[^A-Za-z0-9 _-]", "", source_name).strip()[:48] or "imported"
+            dialog = Gtk.FileDialog(title="Import an HTML wallpaper")
+            html_filter = Gtk.FileFilter(name="HTML files"); html_filter.add_pattern("*.html"); html_filter.add_pattern("*.htm")
+            filters = Gio.ListStore.new(Gtk.FileFilter); filters.append(html_filter)
+            dialog.set_filters(filters)
+            def done(d, result):
+                try:
+                    source = Path(d.open_finish(result).get_path())
+                except (GLib.Error, TypeError):
+                    return
+                stem = re.sub(r"[^A-Za-z0-9 _-]", "", source.stem).strip()[:40] or "imported"
+                name, index = stem, 2
+                while name in PRESETS or user_file(name):
+                    name, index = f"{stem} {index}", index + 1
+                try:
                     USER_WALLPAPERS.mkdir(parents=True, exist_ok=True)
-                    destination = USER_WALLPAPERS / f"{name}.html"
-                    index = 2
-                    while destination.exists() or name in PRESETS:
-                        suffix = f" {index}"; name = f"{source_name[:48-len(suffix)]}{suffix}"
-                        destination = USER_WALLPAPERS / f"{name}.html"; index += 1
-                    try:
-                        ensure_user_api()
-                        source_path = selected.get_path()
-                        if not source_path:
-                            raise ValueError("The selected file is not available as a local HTML file")
-                        copy_local_assets(source_path, USER_WALLPAPERS)
-                        shutil.copy2(source_path, destination)
-                        append_preset(name); set_target(name)
-                        show_wallpaper(app)
-                        status.set_text(f"Imported and applied {name}.")
-                    except (GLib.Error, OSError, ValueError) as error:
-                        status.set_text(f"Could not import file: {getattr(error, 'message', str(error))}")
-                dialog.destroy()
-            chooser.connect("response", response); chooser.show()
+                    ensure_user_api()
+                    copy_local_assets(source, USER_WALLPAPERS)
+                    shutil.copy2(source, USER_WALLPAPERS / f"{name}.html")
+                except (OSError, ValueError) as error:
+                    toast(f"Could not import: {error}")
+                    return
+                refresh_gallery(select=name); apply(name)
+            dialog.open(win, None, done)
 
-        import_button.connect("clicked", import_html)
-        studio.present()
+        for action_name, handler in (("port-file", port_file), ("port-link", port_link), ("import-html", import_html),
+                                     ("new-shader", new_shader),
+                                     ("open-folder", lambda *_: (USER_WALLPAPERS.mkdir(parents=True, exist_ok=True),
+                                                                 Gio.AppInfo.launch_default_for_uri(USER_WALLPAPERS.as_uri(), None)))):
+            action = Gio.SimpleAction.new(action_name, None)
+            action.connect("activate", handler)
+            win.add_action(action)
+
+        drop = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY)
+        def dropped(_target, files, *_):
+            for file in files.get_files():
+                if file.get_path():
+                    port(file.get_path())
+            return True
+        drop.connect("drop", dropped)
+        win.add_controller(drop)
+
+        def pause_toggled(button):
+            if button.get_active():
+                close_views(); stop_engine()
+                if service_elsewhere():
+                    subprocess.run(["systemctl", "--user", "stop", SERVICE])
+                toast("Wallpaper paused")
+            else:
+                show_wallpaper(app)
+        pause_button.connect("toggled", pause_toggled)
+
+        refresh_gallery()
+        load_look()
+        track_selection()
+        win.present()
+        if os.environ.get("ASCIIPAPER_STUDIO_SNAPSHOT"):   # docs and tests: save the window as a PNG, then quit
+            win.set_default_size(1000, int(os.environ.get("ASCIIPAPER_STUDIO_SNAPSHOT_HEIGHT", "860")))
+            def scroll():   # ASCIIPAPER_STUDIO_SNAPSHOT_SCROLL=0..1: how far down the page to capture
+                scroller = page.get_first_child()
+                while scroller and not isinstance(scroller, Gtk.ScrolledWindow):
+                    scroller = scroller.get_first_child()
+                if scroller:
+                    adj = scroller.get_vadjustment()
+                    adj.set_value((adj.get_upper() - adj.get_page_size()) * float(os.environ.get("ASCIIPAPER_STUDIO_SNAPSHOT_SCROLL", "0")))
+                return False
+            GLib.timeout_add_seconds(3, scroll)
+            def snap():
+                content, node = win.get_content(), Gtk.Snapshot()
+                width, height = content.get_width(), content.get_height()
+                bg = Gdk.RGBA(); bg.parse("#242424" if Adw.StyleManager.get_default().get_dark() else "#fafafa")
+                node.append_color(bg, Graphene.Rect().init(0, 0, width, height))
+                Gtk.WidgetPaintable.new(content).get_current_image().snapshot(node, width, height)
+                rendered = node.to_node()
+                if rendered:
+                    win.get_renderer().render_texture(rendered, None).save_to_png(os.environ["ASCIIPAPER_STUDIO_SNAPSHOT"])
+                app.quit()
+                return False
+            GLib.timeout_add_seconds(int(os.environ.get("ASCIIPAPER_STUDIO_SNAPSHOT_DELAY", "8")), snap)
 
     def command_line(app, command_line):
         args = command_line.get_arguments()[1:]
@@ -1053,23 +1381,33 @@ def main():
         print(f"Created {USER_WALLPAPERS / (name + '.json')}\n"
               f"Change its look in the Studio (asciipaper --studio) or by editing that file; it updates live.")
         set_wallpaper(name)
-    elif args[:1] == ["create"]:
-        if len(args) != 2 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _-]{0,47}", args[1]):
-            sys.exit("Usage: asciipaper create <name>  (letters, numbers, spaces, _ and -; up to 48 characters)")
-        if args[1] in PRESETS:
-            sys.exit(f"asciipaper: {args[1]!r} is already a built-in preset; choose another name")
+    elif args[:1] == ["create"] and len(args) in {2, 3} and args[2:] in ([], ["--html"]):
+        name = args[1]
+        if not re.fullmatch(NAME_RE, name):
+            sys.exit("Usage: asciipaper create <name> [--html]  (letters, numbers, spaces, _ and -; up to 48 characters)")
+        if name in PRESETS or (USER_WALLPAPERS / f"{name}.json").exists() or (USER_WALLPAPERS / f"{name}.html").exists():
+            sys.exit(f"asciipaper: {name!r} already exists; choose another name")
         USER_WALLPAPERS.mkdir(parents=True, exist_ok=True)
-        destination = USER_WALLPAPERS / f"{args[1]}.html"
-        if destination.exists():
-            sys.exit(f"asciipaper: already exists: {destination}")
         ensure_user_api()
-        shutil.copyfile(LOCAL / "starter.html", destination)
-        print(f"Created {destination}\nEdit the HTML, then preview it with: asciipaper '{destination}'\nSave it as a named wallpaper with: asciipaper set '{args[1]}'")
-    elif args[:2] == ["export", "lively"]:
-        if len(args) not in {3, 4}:
-            sys.exit("Usage: asciipaper export lively <preset-or-html-file> [output.zip]")
-        output = export_lively(args[2], args[3] if len(args) == 4 else None)
-        print(f"Created {output}\nImport this ZIP into Lively Wallpaper on Windows.")
+        if args[2:] == ["--html"]:
+            destination = USER_WALLPAPERS / f"{name}.html"
+            shutil.copyfile(LOCAL / "starter.html", destination)
+        else:   # a shader wallpaper: runs natively and on the web
+            shutil.copyfile(LOCAL / "starter.glsl", USER_WALLPAPERS / f"{name}.glsl")
+            spec = {"title": name, "shader": f"{name}.glsl", "charset": CHARSETS["asciify"], "cell": 10,
+                    "aspect": 0.6, "background": "#080909", "fill": 0.1, "uniforms": {"speed": 1}}
+            (USER_WALLPAPERS / f"{name}.json").write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
+            spec_html(USER_WALLPAPERS / f"{name}.json")
+            destination = USER_WALLPAPERS / f"{name}.glsl"
+        print(f"Created {destination}\nTry it: asciipaper '{name}'   Keep it: asciipaper set '{name}'\n"
+              f"Edits show live while it runs.")
+    elif args[:1] == ["export"] and len(args) in {2, 3, 4}:
+        rest = args[2:] if args[1] == "lively" else args[1:]   # `export lively` is the old spelling
+        if not rest or len(rest) > 2:
+            sys.exit("Usage: asciipaper export <wallpaper> [output.zip]")
+        output = export_web(rest[0], rest[1] if len(rest) == 2 else None)
+        print(f"Created {output}\nWindows: open project.json in Wallpaper Engine, or drag the ZIP onto Lively.\n"
+              f"macOS: unzip and add index.html to Plash.")
     elif args[:1] == ["set"]:
         if len(args) != 2:
             sys.exit(__doc__)

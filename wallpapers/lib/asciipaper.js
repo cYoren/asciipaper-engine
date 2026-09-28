@@ -234,12 +234,15 @@ gl_FragColor=vec4(mix(under,d.gba,texture2D(atlas,uv).a),1.0);}`;
     for (const k of ['charset', 'cell', 'aspect', 'maxCells', 'background', 'font', 'time', 'period', 'fill', 'weight']) if (s[k] !== undefined) config[k] = s[k];
     const el = s.media && document.getElementById('asciipaper-media');
     if (el && 'playbackRate' in el) { el.playbackRate = uniforms.speed || 1; el.play?.().catch(() => {}); }
-    let frame = null;
+    let frame = null, placeholder = false;
     return ascii(Object.assign(config, {
       update(scene) {
         Object.assign(scene.uniforms, uniforms);
         const w0 = el && (el.videoWidth || el.naturalWidth), h0 = el && (el.videoHeight || el.naturalHeight);
-        if (!w0) return;   // no media, or not loaded yet
+        if (!w0) {   // no media, or not loaded yet: bind something, or the sampler reads the frame being drawn
+          if (!placeholder) { scene.texture('media', 1, 1, new Uint8Array([0, 0, 0, 255])); scene.uniforms.mediaSize = [1, 1]; placeholder = true; }
+          return;
+        }
         if (!frame) {
           const w = Math.min(256, w0), h = Math.max(1, Math.round(w * h0 / w0));
           frame = Object.assign(document.createElement('canvas'), {width: w, height: h}).getContext('2d', {willReadFrequently: true});

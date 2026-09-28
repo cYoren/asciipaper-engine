@@ -104,7 +104,11 @@ static void map_frames(struct spec *s, const char *path) {
 static void spec_update(struct scene *scene, float dt) {
     struct spec *s = current;
     for (int k = 0; k < s->nuniforms; k++) scene_uniform(scene, s->uniforms[k].name, s->uniforms[k].n, s->uniforms[k].v);
-    if (!s->frames) return;
+    if (!s->frames) {   // bind something, or a `media` sampler would read the frame being drawn
+        static const uint8_t black[3];
+        if (!scene->state) { scene->state = calloc(1, sizeof(long)); scene_texture(scene, "media", 1, 1, 3, black); }
+        return;
+    }
     float size[2] = {s->fw, s->fh};
     scene_uniform(scene, "mediaSize", 2, size);
     long frame = s->fcount > 1 ? (long)floor(scene->time * s->fps * uniform(s, "speed", 1)) % s->fcount : 0;
