@@ -228,7 +228,7 @@ static void fluid_upload(struct scene *s, struct fluid *f) {
         f->bytes[o] = 127.5f + f->front[i] / .36f * 255; f->bytes[o + 1] = 127.5f + f->front[i + 1] / .36f * 255;
         f->bytes[o + 2] = f->front[i + 2] / .8f * 255;
     }
-    scene_texture(s, "flow", f->columns, f->rows, f->bytes);
+    scene_texture(s, "flow", f->columns, f->rows, 4, f->bytes);
 }
 
 static void fluid_resize(struct scene *s) {

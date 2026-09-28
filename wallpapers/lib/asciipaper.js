@@ -95,15 +95,17 @@ uniform sampler2D u_lut;uniform float u_glyphs,u_useLut;
 void main(){vec4 c=cell(vec2(v_uv.x,1.0-v_uv.y));float l=clamp(c.a,0.0,1.0);
 float g=u_useLut>0.5?texture2D(u_lut,vec2((floor(l*255.0+0.5)+0.5)/256.0,0.5)).a*255.0:floor(l*(u_glyphs-1.0)+0.5);
 gl_FragColor=vec4(g/255.0,clamp(c.rgb,0.0,1.0));}`;
-  const GLYPHS = `precision highp float;varying vec2 v_uv;uniform sampler2D cells,atlas;uniform vec2 grid,cell,atlasSize;uniform float tile,pad;uniform vec3 bg;
-void main(){vec4 d=texture2D(cells,(floor(v_uv*grid)+0.5)/grid);vec2 l=fract(vec2(v_uv.x,1.0-v_uv.y)*grid);
-vec2 uv=(vec2(floor(d.r*255.0+0.5)*tile,0.0)+pad+l*cell)/atlasSize;gl_FragColor=vec4(mix(bg,d.gba,texture2D(atlas,uv).a),1.0);}`;
+  // `fill` (0..1) lays each glyph's colour faintly behind it, scaled by its density, so pictures read through the gaps.
+  const GLYPHS = `precision highp float;varying vec2 v_uv;uniform sampler2D cells,atlas;uniform vec2 grid,cell,atlasSize;uniform float tile,pad,fill,glyphs;uniform vec3 bg;
+void main(){vec4 d=texture2D(cells,(floor(v_uv*grid)+0.5)/grid);vec2 l=fract(vec2(v_uv.x,1.0-v_uv.y)*grid);float g=floor(d.r*255.0+0.5);
+vec2 uv=(vec2(g*tile,0.0)+pad+l*cell)/atlasSize;vec3 under=bg+d.gba*fill*g/max(glyphs-1.0,1.0);
+gl_FragColor=vec4(mix(under,d.gba,texture2D(atlas,uv).a),1.0);}`;
   const CPU_CELL = 'vec4 cell(vec2 uv){return texture2D(u_data,uv);}';
   const PAD = 3;
 
   function ascii(config = {}) {
     const cfg = Object.assign({charset: ' .:-=+*#%@', cell: 8, aspect: .6, maxCells: 40000, background: '#080909',
-      font: '"JetBrains Mono", ui-monospace, monospace', time: 0, period: 2000 * Math.PI}, config);
+      font: '"JetBrains Mono", ui-monospace, monospace', time: 0, period: 2000 * Math.PI, fill: 0}, config);
     const chars = [...cfg.charset];
     if (chars.length > 256) throw new Error('asciipaper: charset is limited to 256 glyphs');
     const canvas = cfg.canvas || (document.body || document.documentElement).appendChild(document.createElement('canvas'));
@@ -133,6 +135,7 @@ vec2 uv=(vec2(floor(d.r*255.0+0.5)*tile,0.0)+pad+l*cell)/atlasSize;gl_FragColor=
     const bg = (cfg.background.match(/[0-9a-f]{2}/gi) || ['08', '09', '09']).map(h => parseInt(h, 16) / 255);
     gl.useProgram(glyphProg);
     gl.uniform1i(glyphProg.u('cells'), 0); gl.uniform1i(glyphProg.u('atlas'), 1); gl.uniform3fv(glyphProg.u('bg'), bg);
+    gl.uniform1f(glyphProg.u('fill'), cfg.fill); gl.uniform1f(glyphProg.u('glyphs'), chars.length);
     gl.useProgram(cellProg);
     gl.uniform1i(cellProg.u('u_data'), 2); gl.uniform1i(cellProg.u('u_lut'), 3);
     gl.uniform1f(cellProg.u('u_glyphs'), chars.length); gl.uniform1f(cellProg.u('u_useLut'), cfg.lut ? 1 : 0);
@@ -178,7 +181,7 @@ vec2 uv=(vec2(floor(d.r*255.0+0.5)*tile,0.0)+pad+l*cell)/atlasSize;gl_FragColor=
       const cw = canvas.width / cols, ch = canvas.height / rows, tile = Math.ceil(cw) + PAD * 2;
       const atlas = document.createElement('canvas'), ax = atlas.getContext('2d');
       atlas.width = tile * chars.length; atlas.height = Math.ceil(ch) + PAD * 2;
-      ax.font = `${.9 * Math.min(cw / .55, ch)}px ${cfg.font}`;
+      ax.font = `${cfg.weight || 400} ${.9 * Math.min(cw / .55, ch)}px ${cfg.font}`;
       ax.textAlign = 'center'; ax.textBaseline = 'middle'; ax.fillStyle = '#fff';
       chars.forEach((c, i) => ax.fillText(c, i * tile + PAD + cw / 2, PAD + ch / 2));
       gl.activeTexture(gl.TEXTURE1); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas);
@@ -220,7 +223,36 @@ vec2 uv=(vec2(floor(d.r*255.0+0.5)*tile,0.0)+pad+l*cell)/atlasSize;gl_FragColor=
     return scene;
   }
 
-  window.asciipaper = {options, pointer, set, ascii,
+  // ---- spec(runtime): the web version of a wallpaper spec (asciipaper writes the page, with the
+  // shader inlined). The media, if any, is the page's #asciipaper-media <img> or <video>; each
+  // frame is drawn small and handed to the shader as `media`, like asciipaper-engine does.
+  function spec(s) {
+    const color = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? [1, 3, 5].map(i => parseInt(v.slice(i, i + 2), 16) / 255) : v;
+    const uniforms = {};
+    for (const [k, v] of Object.entries(s.uniforms || {})) uniforms[k] = typeof v === 'boolean' ? +v : color(v);
+    const config = {glsl: s.glsl};
+    for (const k of ['charset', 'cell', 'aspect', 'maxCells', 'background', 'font', 'time', 'period', 'fill', 'weight']) if (s[k] !== undefined) config[k] = s[k];
+    const el = s.media && document.getElementById('asciipaper-media');
+    if (el && 'playbackRate' in el) { el.playbackRate = uniforms.speed || 1; el.play?.().catch(() => {}); }
+    let frame = null;
+    return ascii(Object.assign(config, {
+      update(scene) {
+        Object.assign(scene.uniforms, uniforms);
+        const w0 = el && (el.videoWidth || el.naturalWidth), h0 = el && (el.videoHeight || el.naturalHeight);
+        if (!w0) return;   // no media, or not loaded yet
+        if (!frame) {
+          const w = Math.min(256, w0), h = Math.max(1, Math.round(w * h0 / w0));
+          frame = Object.assign(document.createElement('canvas'), {width: w, height: h}).getContext('2d', {willReadFrequently: true});
+        }
+        const {width, height} = frame.canvas;
+        frame.drawImage(el, 0, 0, width, height);
+        scene.texture('media', width, height, new Uint8Array(frame.getImageData(0, 0, width, height).data.buffer));
+        scene.uniforms.mediaSize = [width, height];
+      },
+    }));
+  }
+
+  window.asciipaper = {options, pointer, set, ascii, spec,
     onChange(callback) { addEventListener('asciipaper-settings', event => callback(event.detail)); }};
   set({});
 })();

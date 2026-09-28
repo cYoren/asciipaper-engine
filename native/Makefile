@@ -13,8 +13,8 @@ HEADERS = $(patsubst %.xml,%-client-protocol.h,$(notdir $(XML)))
 CODE = $(patsubst %.xml,%-protocol.c,$(notdir $(XML)))
 vpath %.xml $(sort $(dir $(XML)))
 
-asciipaper-engine: engine.c presets.c engine.h $(HEADERS) $(CODE)
-	$(CC) $(CFLAGS) $(shell pkg-config --cflags $(PKGS)) -I. -o $@ engine.c presets.c $(CODE) $(shell pkg-config --libs $(PKGS)) -lm
+asciipaper-engine: engine.c presets.c spec.c json.c engine.h spec.h json.h $(HEADERS) $(CODE)
+	$(CC) $(CFLAGS) $(shell pkg-config --cflags $(PKGS)) -I. -o $@ engine.c presets.c spec.c json.c $(CODE) $(shell pkg-config --libs $(PKGS)) -lm
 
 %-client-protocol.h: %.xml
 	wayland-scanner client-header $< $@

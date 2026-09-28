@@ -4,6 +4,9 @@
 // compositor with layer-shell: Hyprland, Sway, niri, KDE Plasma, river, Wayfire, labwc, COSMIC.
 //
 // usage: asciipaper-engine PRESET
+//        asciipaper-engine --spec WALLPAPER.json --lib DIR   (DIR holds media.glsl; see spec.c)
+//        ... --snapshot OUT.png [--size 1920x1080] [--seconds 3] [--pointer X,Y]
+//            render offscreen, without a compositor: previews, thumbnails and tests.
 // Settings come from $XDG_CONFIG_HOME/asciipaper/engine.json and are re-read when it changes.
 // A line "pause [OUTPUT...]" on stdin sets which monitors stop drawing; the launcher sends these
 // on Hyprland when a fullscreen window covers a monitor.
@@ -25,6 +28,7 @@
 #include <wayland-client.h>
 #include <wayland-egl.h>
 #include "engine.h"
+#include "spec.h"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "fractional-scale-v1-client-protocol.h"
 #include "viewporter-client-protocol.h"
@@ -42,9 +46,10 @@ static const char CELL_MAIN[] =
     "float g=u_useLut>0.5?texture2D(u_lut,vec2((floor(l*255.0+0.5)+0.5)/256.0,0.5)).a*255.0:floor(l*(u_glyphs-1.0)+0.5);\n"
     "gl_FragColor=vec4(g/255.0,clamp(c.rgb,0.0,1.0));}";
 static const char GLYPHS[] =
-    "precision highp float;varying vec2 v_uv;uniform sampler2D cells,atlas;uniform vec2 grid,cell,atlasSize;uniform float tile,pad;uniform vec3 bg;\n"
-    "void main(){vec4 d=texture2D(cells,(floor(v_uv*grid)+0.5)/grid);vec2 l=fract(vec2(v_uv.x,1.0-v_uv.y)*grid);\n"
-    "vec2 uv=(vec2(floor(d.r*255.0+0.5)*tile,0.0)+pad+l*cell)/atlasSize;gl_FragColor=vec4(mix(bg,d.gba,texture2D(atlas,uv).a),1.0);}";
+    "precision highp float;varying vec2 v_uv;uniform sampler2D cells,atlas;uniform vec2 grid,cell,atlasSize;uniform float tile,pad,fill,glyphs;uniform vec3 bg;\n"
+    "void main(){vec4 d=texture2D(cells,(floor(v_uv*grid)+0.5)/grid);vec2 l=fract(vec2(v_uv.x,1.0-v_uv.y)*grid);float g=floor(d.r*255.0+0.5);\n"
+    "vec2 uv=(vec2(g*tile,0.0)+pad+l*cell)/atlasSize;vec3 under=bg+d.gba*fill*g/max(glyphs-1.0,1.0);\n"
+    "gl_FragColor=vec4(mix(under,d.gba,texture2D(atlas,uv).a),1.0);}";
 static const char CPU_CELL[] = "vec4 cell(vec2 uv){return texture2D(u_data,uv);}";
 #define PAD 3
 #define MAX_TEXTURES 4
@@ -93,6 +98,10 @@ static EGLConfig egl_config;
 static EGLContext egl_context;
 static GLuint cell_prog, glyph_prog, lut_tex, quad;
 static float background[3];
+static const char *spec_path, *lib_dir = ".";
+static char spec_shader[4096];   // the spec's shader file, when it has one
+static const struct preset *pending;   // a reloaded spec waiting for a GL context to compile in
+static const char *snapshot;           // render once to this PNG instead of running
 
 static struct { double fps, idle_fps, quality, pointer; } options = {24, 12, 1, 1};
 static char engine_json[4096];
@@ -125,31 +134,28 @@ static int load_options(void) {
 }
 
 // ---- GL helpers
-static GLuint compile(GLenum type, const char *const *parts, int n) {
-    GLuint s = glCreateShader(type);
-    glShaderSource(s, n, parts, NULL);
-    glCompileShader(s);
-    GLint ok;
-    glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        char log[2048];
-        glGetShaderInfoLog(s, sizeof log, NULL, log);
-        fprintf(stderr, "asciipaper-engine: shader: %s\n", log);
-        exit(1);
-    }
-    return s;
-}
-
+// Compile and link; 0 (with the error on stderr) if the shader is broken.
 static GLuint program(const char *const *parts, int n) {
-    GLuint p = glCreateProgram();
     const char *vertex = QUAD;
-    glAttachShader(p, compile(GL_VERTEX_SHADER, &vertex, 1));
-    glAttachShader(p, compile(GL_FRAGMENT_SHADER, parts, n));
-    glBindAttribLocation(p, 0, "p");
-    glLinkProgram(p);
-    GLint ok;
-    glGetProgramiv(p, GL_LINK_STATUS, &ok);
-    if (!ok) { fprintf(stderr, "asciipaper-engine: shader link failed\n"); exit(1); }
+    GLuint p = glCreateProgram(), shaders[2] = {glCreateShader(GL_VERTEX_SHADER), glCreateShader(GL_FRAGMENT_SHADER)};
+    glShaderSource(shaders[0], 1, &vertex, NULL);
+    glShaderSource(shaders[1], n, parts, NULL);
+    GLint ok = 1;
+    char log[4096];
+    for (int i = 0; i < 2 && ok; i++) {
+        glCompileShader(shaders[i]);
+        glGetShaderiv(shaders[i], GL_COMPILE_STATUS, &ok);
+        if (!ok) { glGetShaderInfoLog(shaders[i], sizeof log, NULL, log); fprintf(stderr, "asciipaper-engine: shader error:\n%s", log); }
+        glAttachShader(p, shaders[i]);
+    }
+    if (ok) {
+        glBindAttribLocation(p, 0, "p");
+        glLinkProgram(p);
+        glGetProgramiv(p, GL_LINK_STATUS, &ok);
+        if (!ok) { glGetProgramInfoLog(p, sizeof log, NULL, log); fprintf(stderr, "asciipaper-engine: shader link error:\n%s", log); }
+    }
+    glDeleteShader(shaders[0]); glDeleteShader(shaders[1]);
+    if (!ok) { glDeleteProgram(p); return 0; }
     return p;
 }
 
@@ -164,17 +170,45 @@ static GLuint texture(GLenum filter) {
     return t;
 }
 
-static int glyph_count(void) {
+static int glyph_count(const struct preset *p) {
     int n = 0;
-    for (const char *c = P->charset; *c; c = g_utf8_next_char(c)) n++;
-    return n;
+    for (const char *c = p->charset; *c; c = g_utf8_next_char(c)) n++;
+    return n > 256 ? 256 : n;
 }
 
-// First time a surface is current: compile the programs shared by every monitor.
+static uint8_t hex(const char *s) { char b[3] = {s[0], s[1], 0}; return strtol(b, NULL, 16); }
+
+// Make `p` the preset being drawn: compile its cell program. Keeps the current one if it fails.
+static int use_preset(const struct preset *p) {
+    const char *parts[] = {HEADER, p->glsl ? p->glsl : CPU_CELL, CELL_MAIN};
+    GLuint next = program(parts, 3);
+    if (!next) return 0;
+    if (cell_prog) glDeleteProgram(cell_prog);
+    cell_prog = next;
+    P = p;
+    if (spec_path) spec_use(p);
+    for (int i = 0; i < 3; i++) background[i] = hex(P->background + 1 + i * 2) / 255.f;
+    glUseProgram(glyph_prog);
+    glUniform3fv(glGetUniformLocation(glyph_prog, "bg"), 1, background);
+    glUniform1f(glGetUniformLocation(glyph_prog, "fill"), P->fill);
+    glUniform1f(glGetUniformLocation(glyph_prog, "glyphs"), glyph_count(P));
+    glUseProgram(cell_prog);
+    glUniform1i(glGetUniformLocation(cell_prog, "u_data"), 2);
+    glUniform1i(glGetUniformLocation(cell_prog, "u_lut"), 3);
+    glUniform1f(glGetUniformLocation(cell_prog, "u_glyphs"), glyph_count(P));
+    glUniform1f(glGetUniformLocation(cell_prog, "u_useLut"), P->lut ? 1 : 0);
+    if (P->lut) {
+        glActiveTexture(GL_TEXTURE3);
+        if (!lut_tex) lut_tex = texture(GL_NEAREST);
+        glBindTexture(GL_TEXTURE_2D, lut_tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, 256, 1, 0, GL_ALPHA, GL_UNSIGNED_BYTE, P->lut);
+    }
+    return 1;
+}
+
+// First time a surface is current: what every monitor shares.
 static void init_gl(void) {
-    const char *cell_parts[] = {HEADER, P->glsl ? P->glsl : CPU_CELL, CELL_MAIN};
     const char *glyph_parts[] = {GLYPHS};
-    cell_prog = program(cell_parts, 3);
     glyph_prog = program(glyph_parts, 1);
     static const float corners[] = {0, 0, 1, 0, 0, 1, 1, 1};
     glGenBuffers(1, &quad);
@@ -186,30 +220,21 @@ static void init_gl(void) {
     glUseProgram(glyph_prog);
     glUniform1i(glGetUniformLocation(glyph_prog, "cells"), 0);
     glUniform1i(glGetUniformLocation(glyph_prog, "atlas"), 1);
-    glUniform3fv(glGetUniformLocation(glyph_prog, "bg"), 1, background);
-    glUseProgram(cell_prog);
-    glUniform1i(glGetUniformLocation(cell_prog, "u_data"), 2);
-    glUniform1i(glGetUniformLocation(cell_prog, "u_lut"), 3);
-    glUniform1f(glGetUniformLocation(cell_prog, "u_glyphs"), glyph_count());
-    glUniform1f(glGetUniformLocation(cell_prog, "u_useLut"), P->lut ? 1 : 0);
-    if (P->lut) {
-        glActiveTexture(GL_TEXTURE3);
-        lut_tex = texture(GL_NEAREST);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, 256, 1, 0, GL_ALPHA, GL_UNSIGNED_BYTE, P->lut);
-    }
+    if (!use_preset(P)) exit(1);
 }
 
 // Glyphs rasterized at the exact cell size in drawn pixels, laid out as asciipaper.js does.
 static void build_atlas(struct output *o) {
-    int n = glyph_count(), tile = (int)ceil(o->cell_w) + PAD * 2, w = tile * n, h = (int)ceil(o->cell_h) + PAD * 2;
+    int n = glyph_count(P), tile = (int)ceil(o->cell_w) + PAD * 2, w = tile * n, h = (int)ceil(o->cell_h) + PAD * 2;
     cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_A8, w, h);
     cairo_t *cr = cairo_create(surface);
     PangoLayout *layout = pango_cairo_create_layout(cr);
     PangoFontDescription *font = pango_font_description_from_string(P->font ? P->font : "JetBrains Mono, monospace");
     pango_font_description_set_absolute_size(font, .9 * fmin(o->cell_w / .55, o->cell_h) * PANGO_SCALE);
+    if (P->weight) pango_font_description_set_weight(font, P->weight);
     pango_layout_set_font_description(layout, font);
     int i = 0;
-    for (const char *c = P->charset; *c; c = g_utf8_next_char(c), i++) {
+    for (const char *c = P->charset; *c && i < n; c = g_utf8_next_char(c), i++) {
         PangoRectangle ink, logical;
         pango_layout_set_text(layout, c, g_utf8_next_char(c) - c);
         pango_layout_get_pixel_extents(layout, &ink, &logical);
@@ -244,15 +269,34 @@ static void setup(struct output *o) {
     o->buf_w = fmax(1, round(o->width * density));
     o->buf_h = fmax(1, round(o->height * density));
     if (o->viewport) wp_viewport_set_destination(o->viewport, o->width, o->height);
-    if (!o->egl_window) {
+    if (snapshot && !o->egl) {
+        EGLint size[] = {EGL_WIDTH, o->buf_w, EGL_HEIGHT, o->buf_h, EGL_NONE};
+        o->egl = eglCreatePbufferSurface(egl_display, egl_config, size);
+        make_current(o);
+        if (!glyph_prog) init_gl();
+    } else if (snapshot) {
+        make_current(o);
+    } else if (!o->egl_window) {
         o->egl_window = wl_egl_window_create(o->surface, o->buf_w, o->buf_h);
         o->egl = eglCreateWindowSurface(egl_display, egl_config, (EGLNativeWindowType)o->egl_window, NULL);
         make_current(o);
         eglSwapInterval(egl_display, 0);   // pacing is ours; never block on vsync
-        if (!cell_prog) init_gl();
+        if (!glyph_prog) init_gl();
     } else {
         wl_egl_window_resize(o->egl_window, o->buf_w, o->buf_h, 0, 0);
         make_current(o);
+    }
+    if (pending) {   // a reloaded spec: compile it now that a context is current
+        const struct preset *next = pending;
+        pending = NULL;
+        if (use_preset(next)) {
+            struct output *each;
+            wl_list_for_each(each, &outputs, link) {
+                free(each->scene.state); each->scene.state = NULL;
+                each->ntextures = 0;   // ponytail: the old textures leak on reload
+                each->dirty = 1;
+            }
+        }
     }
     struct scene *s = &o->scene;
     s->width = o->width; s->height = o->height;
@@ -289,7 +333,8 @@ void scene_uniform(struct scene *s, const char *name, int n, const float *v) {
     else glUniform4fv(at, 1, v);
 }
 
-void scene_texture(struct scene *s, const char *name, int w, int h, const uint8_t *rgba) {
+void scene_texture(struct scene *s, const char *name, int w, int h, int channels, const uint8_t *pixels) {
+    GLenum format = channels == 3 ? GL_RGB : GL_RGBA;
     struct output *o = s->output;
     int i = 0;
     while (i < o->ntextures && strcmp(o->textures[i].name, name)) i++;
@@ -302,9 +347,9 @@ void scene_texture(struct scene *s, const char *name, int w, int h, const uint8_
     }
     glBindTexture(GL_TEXTURE_2D, o->textures[i].tex);
     if (o->textures[i].w == w && o->textures[i].h == h)
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, format, GL_UNSIGNED_BYTE, pixels);
     else {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+        glTexImage2D(GL_TEXTURE_2D, 0, format, w, h, 0, format, GL_UNSIGNED_BYTE, pixels);
         o->textures[i].w = w; o->textures[i].h = h;
     }
     glUniform1i(glGetUniformLocation(cell_prog, name), 4 + i);
@@ -365,6 +410,7 @@ static void draw(struct output *o, double now) {
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     // Ask to be told when the compositor shows this frame. Until then we don't draw another, so a
     // monitor the compositor isn't painting (asleep, covered) costs nothing.
+    if (snapshot) return;
     wl_callback_add_listener(wl_surface_frame(o->surface), &frame_listener, o);
     o->frame_pending = 1;
     eglSwapBuffers(egl_display, o->egl);
@@ -559,18 +605,72 @@ static void arm(int timer, double fps) {
     timerfd_settime(timer, 0, &(struct itimerspec){{ns / 1000000000L, ns % 1000000000L}, {0, ns ? 1 : 0}}, NULL);
 }
 
-static uint8_t hex(const char *s) { char b[3] = {s[0], s[1], 0}; return strtol(b, NULL, 16); }
+// --snapshot: one virtual monitor on a pbuffer, simulated for a few seconds at 30 fps, saved as PNG.
+static int take_snapshot(int width, int height, double seconds, float px, float py) {
+    egl_display = eglGetPlatformDisplay(0x31DD /* EGL_PLATFORM_SURFACELESS_MESA */, EGL_DEFAULT_DISPLAY, NULL);
+    EGLint count;
+    static const EGLint config_attribs[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8,
+                                            EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT, EGL_NONE};
+    static const EGLint context_attribs[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
+    if (!egl_display || !eglInitialize(egl_display, NULL, NULL) || !eglBindAPI(EGL_OPENGL_ES_API) ||
+        !eglChooseConfig(egl_display, config_attribs, &egl_config, 1, &count) || !count ||
+        !(egl_context = eglCreateContext(egl_display, egl_config, EGL_NO_CONTEXT, context_attribs))) {
+        fprintf(stderr, "asciipaper-engine: no offscreen OpenGL ES 2 (EGL surfaceless)\n");
+        return 1;
+    }
+    struct output *o = calloc(1, sizeof *o);
+    o->scale = 1; o->width = width; o->height = height; o->configured = 1;
+    o->pointer.x = px; o->pointer.y = py; o->pointer.moved = -1e9;
+    o->scene.output = o; o->scene.pointer = &o->pointer; o->scene.time = P->time;
+    wl_list_insert(&outputs, &o->link);
+    setup(o);
+    int frames = fmax(1, seconds * 30);
+    for (int i = 0; i < frames; i++) {
+        double now = i / 30.0;
+        if (px >= 0) { o->pointer.inside = 1; o->pointer.moved = now; if (P->pointer_move && o->scene.state) P->pointer_move(&o->scene); }
+        draw(o, now);
+    }
+    uint8_t *rgba = malloc((size_t)o->buf_w * o->buf_h * 4);
+    glReadPixels(0, 0, o->buf_w, o->buf_h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    cairo_surface_t *image = cairo_image_surface_create(CAIRO_FORMAT_RGB24, o->buf_w, o->buf_h);
+    uint32_t *out = (uint32_t *)cairo_image_surface_get_data(image);
+    int stride = cairo_image_surface_get_stride(image) / 4;
+    for (int y = 0; y < o->buf_h; y++)   // GL rows start at the bottom
+        for (int x = 0; x < o->buf_w; x++) {
+            const uint8_t *p = rgba + ((size_t)(o->buf_h - 1 - y) * o->buf_w + x) * 4;
+            out[y * stride + x] = (uint32_t)p[0] << 16 | p[1] << 8 | p[2];
+        }
+    cairo_surface_mark_dirty(image);
+    cairo_status_t status = cairo_surface_write_to_png(image, snapshot);
+    cairo_surface_destroy(image); free(rgba);
+    if (status != CAIRO_STATUS_SUCCESS) { fprintf(stderr, "asciipaper-engine: can't write %s\n", snapshot); return 1; }
+    return 0;
+}
+
+static void usage(const char *argv0) {
+    fprintf(stderr, "usage: %s PRESET | --spec WALLPAPER.json [--lib DIR]\n"
+                    "       [--snapshot OUT.png [--size WxH] [--seconds S] [--pointer X,Y]]\npresets:", argv0);
+    for (int i = 0; presets[i]; i++) fprintf(stderr, " %s", presets[i]->name);
+    fputc('\n', stderr);
+    exit(2);
+}
 
 int main(int argc, char **argv) {
-    for (int i = 0; argc == 2 && presets[i]; i++) if (!strcmp(presets[i]->name, argv[1])) P = presets[i];
-    if (!P) {
-        fprintf(stderr, "usage: %s PRESET\npresets:", argv[0]);
-        for (int i = 0; presets[i]; i++) fprintf(stderr, " %s", presets[i]->name);
-        fputc('\n', stderr);
-        return 2;
+    int snap_w = 1920, snap_h = 1080;
+    double snap_seconds = 3;
+    float snap_x = -1, snap_y = -1;
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--spec") && i + 1 < argc) spec_path = argv[++i];
+        else if (!strcmp(argv[i], "--snapshot") && i + 1 < argc) snapshot = argv[++i];
+        else if (!strcmp(argv[i], "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &snap_w, &snap_h);
+        else if (!strcmp(argv[i], "--seconds") && i + 1 < argc) snap_seconds = atof(argv[++i]);
+        else if (!strcmp(argv[i], "--pointer") && i + 1 < argc) sscanf(argv[++i], "%f,%f", &snap_x, &snap_y);
+        else if (!strcmp(argv[i], "--lib") && i + 1 < argc) lib_dir = argv[++i];
+        else for (int k = 0; presets[k]; k++) if (!strcmp(presets[k]->name, argv[i])) P = presets[k];
     }
+    if (spec_path && !(P = spec_load(spec_path, lib_dir, spec_shader, sizeof spec_shader))) return 1;
+    if (!P) usage(argv[0]);
     prctl(PR_SET_PDEATHSIG, SIGTERM);   // leave with the launcher
-    for (int i = 0; i < 3; i++) background[i] = hex(P->background + 1 + i * 2) / 255.f;
     const char *config = getenv("XDG_CONFIG_HOME"), *home = getenv("HOME");
     char dir[4000];
     snprintf(dir, sizeof dir, config && *config ? "%s/asciipaper" : "%s/.config/asciipaper", config && *config ? config : home);
@@ -578,6 +678,10 @@ int main(int argc, char **argv) {
     load_options();
 
     wl_list_init(&outputs);
+    if (snapshot) {
+        options.quality = 1;
+        return take_snapshot(fmax(16, snap_w), fmax(16, snap_h), snap_seconds, snap_x, snap_y);
+    }
     display = wl_display_connect(NULL);
     if (!display) { fprintf(stderr, "asciipaper-engine: no Wayland display\n"); return 1; }
     struct wl_registry *registry = wl_display_get_registry(display);
@@ -605,6 +709,14 @@ int main(int argc, char **argv) {
     int timer = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC), rate = 0;
     int watch = inotify_init1(IN_CLOEXEC | IN_NONBLOCK);
     inotify_add_watch(watch, dir, IN_CLOSE_WRITE | IN_MOVED_TO);
+    char spec_dir[4096] = "", shader_dir[4096] = "";
+    if (spec_path) {   // edits to the spec or its shader file show up live
+        snprintf(spec_dir, sizeof spec_dir, "%s", spec_path);
+        *(strrchr(spec_dir, '/') ? strrchr(spec_dir, '/') : spec_dir) = 0;
+        inotify_add_watch(watch, *spec_dir ? spec_dir : ".", IN_CLOSE_WRITE | IN_MOVED_TO);
+        snprintf(shader_dir, sizeof shader_dir, "%s", spec_shader);
+        if (strrchr(shader_dir, '/')) { *strrchr(shader_dir, '/') = 0; inotify_add_watch(watch, shader_dir, IN_CLOSE_WRITE | IN_MOVED_TO); }
+    }
     struct pollfd fds[4] = {{wl_display_get_fd(display), POLLIN}, {timer, POLLIN}, {watch, POLLIN}, {0, POLLIN}};
     for (;;) {
         // Outputs that were just configured (or changed size or scale) draw right away.
@@ -624,9 +736,25 @@ int main(int argc, char **argv) {
         if (fds[3].revents & POLLIN) read_command(0);
         if (fds[3].revents & (POLLHUP | POLLERR)) fds[3].fd = -1;
         if (fds[2].revents & POLLIN) {
-            char events[4096];
-            if (read(watch, events, sizeof events) > 0 && load_options())
+            char events[4096] __attribute__((aligned(__alignof__(struct inotify_event))));
+            ssize_t n = read(watch, events, sizeof events);
+            int options_changed = 0, spec_changed = 0;
+            for (char *e = events; n > 0 && e < events + n; e += sizeof(struct inotify_event) + ((struct inotify_event *)e)->len) {
+                const char *name = ((struct inotify_event *)e)->len ? ((struct inotify_event *)e)->name : "";
+                if (!strcmp(name, "engine.json")) options_changed = 1;
+                const char *spec_name = spec_path ? (strrchr(spec_path, '/') ? strrchr(spec_path, '/') + 1 : spec_path) : NULL;
+                const char *shader_name = strrchr(spec_shader, '/') ? strrchr(spec_shader, '/') + 1 : NULL;
+                if ((spec_name && !strcmp(name, spec_name)) || (shader_name && !strcmp(name, shader_name))) spec_changed = 1;
+            }
+            if (options_changed && load_options())
                 wl_list_for_each(o, &outputs, link) o->dirty = 1;   // quality changed: new buffer size
+            if (spec_changed) {
+                const struct preset *next = spec_load(spec_path, lib_dir, spec_shader, sizeof spec_shader);
+                if (next) {
+                    pending = next;
+                    wl_list_for_each(o, &outputs, link) o->dirty = 1;   // setup() compiles it
+                }
+            }
         }
         if (fds[1].revents & POLLIN) {
             uint64_t ticks;

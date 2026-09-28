@@ -13,6 +13,7 @@ Usage:
   asciipaper ./rain.html     run a local file
   asciipaper set fluid       save the choice and restart the service
   asciipaper list            list presets
+  asciipaper import SOURCE [NAME]  port a picture, GIF or video (file, URL or X/Twitter post) into an ASCII wallpaper
   asciipaper create NAME     copy the editable HTML starter into your library
   asciipaper preview NAME    open a wallpaper in a normal window; reloads when you save
   asciipaper export lively NAME [OUTPUT.zip]  package HTML for Windows Lively
@@ -26,6 +27,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
+import html
+import struct
+import urllib.request
 import time
 import zipfile
 from html.parser import HTMLParser
@@ -39,8 +44,10 @@ PRELOAD = ("/app/lib/libgtk4-layer-shell.so.0" if FLATPAK else
 MESA_EGL = "/usr/share/glvnd/egl_vendor.d/50_mesa.json"
 CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "asciipaper/wallpaper"
 SOURCE_WALLPAPERS = Path(__file__).resolve().parent / "wallpapers"
+INSTALLED_WALLPAPERS = Path(__file__).resolve().parent.parent / "share/asciipaper/wallpapers"   # /usr or ~/.local
 LOCAL = (Path("/app/share/asciipaper/wallpapers") if FLATPAK else
          SOURCE_WALLPAPERS if (SOURCE_WALLPAPERS / "fluid.html").is_file() else
+         INSTALLED_WALLPAPERS if (INSTALLED_WALLPAPERS / "fluid.html").is_file() else
          Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "asciipaper/wallpapers")
 USER_WALLPAPERS = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "asciipaper/user-wallpapers"
 ENGINE_CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "asciipaper/engine.json"
@@ -250,18 +257,235 @@ def export_lively(target, destination=None):
                     archive.write(file, file.relative_to(root))
     return output
 
+# ---- Wallpaper specs: JSON that describes a wallpaper (a shader, or media through lib/media.glsl, plus
+# its look). asciipaper-engine runs them natively; spec_html() makes the web version beside them.
+NAME_RE = r"[A-Za-z0-9][A-Za-z0-9 _-]{0,47}"
+CHARSETS = {
+    "classic": " .:-=+*#%@",
+    "detailed": " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
+    "blocks": " ░▒▓█",
+    "braille": " ⠁⠃⠇⡇⣇⣧⣷⣿",
+    "dots": " ·•●",
+    "letters": " .ilLCFTYASMW",
+    "asciify": " .:-=+ASCIIFY#@",
+    "binary": " 01",
+}
+MAX_FRAMES, FRAME_WIDTH, MAX_FPS = 600, 256, 30
+
+
+def spec_file(target):
+    """The spec JSON a target names (a library name or a .json path), or None."""
+    if re.fullmatch(NAME_RE, target) and (USER_WALLPAPERS / f"{target}.json").is_file():
+        return USER_WALLPAPERS / f"{target}.json"
+    path = Path(target).expanduser()
+    return path.resolve() if path.suffix.lower() == ".json" and path.is_file() else None
+
+
+def read_spec(path):
+    try:
+        spec = json.loads(Path(path).read_text(encoding="utf-8"))
+        if isinstance(spec, dict):
+            return spec
+    except (OSError, ValueError):
+        pass
+    sys.exit(f"asciipaper: {path} is not a wallpaper spec (a JSON object)")
+
+
+def spec_shader(spec, base):
+    """GLSL source and its defaults (from a `// defaults: {...}` first line)."""
+    shader = spec.get("shader", "media" if spec.get("media") else None)
+    if not isinstance(shader, str):
+        sys.exit('asciipaper: a spec needs "shader" or "media"')
+    if "cell(" not in shader:
+        path = LOCAL / "lib/media.glsl" if shader == "media" else base / shader
+        shader = path.read_text(encoding="utf-8")
+    defaults = {}
+    if shader.startswith("// defaults:"):
+        try:
+            defaults = json.loads(shader.split("\n", 1)[0][len("// defaults:"):])
+        except ValueError:
+            pass
+    return shader, defaults
+
+
+def spec_html(path):
+    """Write (if changed) and return the web version of a spec: <name>.html beside it."""
+    path = Path(path).resolve()
+    spec = read_spec(path)
+    glsl, defaults = spec_shader(spec, path.parent)
+    runtime = {key: spec[key] for key in ("charset", "cell", "aspect", "maxCells", "background", "font", "time", "period", "fill", "weight")
+               if key in spec}
+    runtime.update(glsl=glsl, uniforms={**defaults, **spec.get("uniforms", {})}, media=bool(spec.get("media")))
+    media = ""
+    if spec.get("media"):
+        src = html.escape(spec["media"], quote=True)
+        media = (f'<img id="asciipaper-media" src="{src}" alt="" hidden>' if Path(spec["media"]).suffix.lower() in
+                 {".gif", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif", ".apng"} else
+                 f'<video id="asciipaper-media" src="{src}" autoplay loop muted playsinline hidden></video>')
+    title = html.escape(spec.get("title", path.stem))
+    page = f"""<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title>
+<!-- Generated by asciipaper from {html.escape(path.name)}; edit that file instead. -->
+<script src="./lib/asciipaper.js"></script>
+<style>html,body{{margin:0;height:100%;overflow:hidden;background:{html.escape(spec.get("background", "#000000"))}}}</style>
+{media}
+<script>asciipaper.spec({json.dumps(runtime).replace("</", "<\\/")});</script>
+"""
+    output = path.with_suffix(".html")
+    if not output.exists() or output.read_text(encoding="utf-8") != page:
+        output.write_text(page, encoding="utf-8")
+    if not (output.parent / "lib/asciipaper.js").exists() and (LOCAL / "lib/asciipaper.js").is_file():
+        (output.parent / "lib").mkdir(exist_ok=True)
+        shutil.copyfile(LOCAL / "lib/asciipaper.js", output.parent / "lib/asciipaper.js")
+    return output
+
+
+def fetch_media(source, folder):
+    """Download a media URL into folder; X/Twitter posts go through the public fxtwitter API."""
+    headers = {"User-Agent": "asciipaper (https://github.com/cYoren/asciipaper)"}
+    post = re.match(r"https?://(?:www\.)?(?:x|twitter|fxtwitter|vxtwitter)\.com/(\w+)/status/(\d+)", source)
+    title = None
+    if post:
+        request = urllib.request.Request(f"https://api.fxtwitter.com/{post[1]}/status/{post[2]}", headers=headers)
+        with urllib.request.urlopen(request, timeout=30) as response:
+            tweet = json.load(response).get("tweet", {})
+        media = (tweet.get("media") or {}).get("all") or []
+        if not media:
+            sys.exit("asciipaper: that post has no picture, GIF or video")
+        source = media[0]["url"]
+        # Fancy Unicode letters (ＴＨＥ, 𝑵𝒐𝒃𝒍𝒆) fold to plain ones; the post's text names it, else its author.
+        text = unicodedata.normalize("NFKC", re.sub(r"https?://\S+", "", tweet.get("text") or "")).strip()
+        author = unicodedata.normalize("NFKC", tweet.get("author", {}).get("name") or post[1]).strip()
+        title = " ".join(text.split()) if 0 < len(text) <= 40 else author or post[1]
+    name = Path(urlparse(source).path).name or "media"
+    destination = Path(folder) / name
+    request = urllib.request.Request(source, headers=headers)
+    with urllib.request.urlopen(request, timeout=60) as response, open(destination, "wb") as out:
+        shutil.copyfileobj(response, out)
+    return destination, title
+
+
+def media_info(path):
+    """(width, height, fps, frame count or None for 'until the end') of a picture, GIF or video."""
+    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                            "stream=width,height,avg_frame_rate,nb_frames:format=duration", "-of", "json", str(path)],
+                           capture_output=True, text=True)
+    try:
+        info = json.loads(probe.stdout)
+        stream = info["streams"][0]
+        width, height = int(stream["width"]), int(stream["height"])
+    except (ValueError, KeyError, IndexError):
+        sys.exit(f"asciipaper: can't read {path} as a picture, GIF or video")
+    num, _, den = stream.get("avg_frame_rate", "0/1").partition("/")
+    fps = float(num) / float(den or 1) if float(den or 1) else 0
+    duration = float(info.get("format", {}).get("duration") or 0)
+    still = fps <= 0 or duration == 0 or stream.get("nb_frames") == "1"
+    return width, height, (0 if still else fps), (1 if still else None)
+
+
+def make_frames(media):
+    """Decode media into <media>.frames for asciipaper-engine: 'APF1', u32 width, height, count,
+    fps x 1000, then RGB frames. Small on purpose: the character grid is only a few hundred cells wide."""
+    if not shutil.which("ffmpeg"):
+        sys.exit("asciipaper: porting pictures, GIFs and videos needs ffmpeg (sudo pacman -S ffmpeg)")
+    width, height, fps, count = media_info(media)
+    w = min(FRAME_WIDTH, width) // 2 * 2 or 2
+    h = max(2, round(w * height / width / 2) * 2)
+    fps = min(fps, MAX_FPS)
+    vf = f"scale={w}:{h}:flags=area" + (f",fps={fps:.3f}" if fps else "")
+    decode = subprocess.run(["ffmpeg", "-v", "error", "-i", str(media), "-vf", vf, "-frames:v", str(count or MAX_FRAMES),
+                             "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True)
+    frames = len(decode.stdout) // (w * h * 3)
+    if decode.returncode or not frames:
+        sys.exit(f"asciipaper: ffmpeg could not decode {media}: {decode.stderr.decode(errors='replace').strip()}")
+    output = Path(f"{media}.frames")
+    with open(output, "wb") as out:
+        out.write(b"APF1" + struct.pack("<4I", w, h, frames, round(fps * 1000)))
+        out.write(decode.stdout[:frames * w * h * 3])
+    rgb = decode.stdout[:frames * w * h * 3]
+    return (output, *look(rgb))
+
+
+def look(rgb):
+    """A starting look for media.glsl, measured from the frames: stretch the 2nd..98th percentile
+    luminance to the full range, give the dense characters to the subject (inverting pictures that
+    are mostly light), and take the tint and background from the picture's own average colour."""
+    step = max(1, len(rgb) // 3 // 20000) * 3   # ~20k samples is plenty
+    samples = range(0, len(rgb) - 2, step)
+    luma = sorted(0.299 * rgb[i] + 0.587 * rgb[i + 1] + 0.114 * rgb[i + 2] for i in samples)
+    lo, hi = luma[len(luma) * 2 // 100] / 255, luma[len(luma) * 98 // 100] / 255
+    contrast = min(4.0, 1 / max(hi - lo, 0.25))
+    median = (luma[len(luma) // 2] / 255 - lo) * contrast
+    mean = [sum(rgb[i + c] for i in samples) / len(samples) for c in range(3)]
+    peak = max(mean) or 1
+    hexed = lambda scale: "#" + "".join(f"{min(255, round(v / peak * scale)):02x}" for v in mean)
+    uniforms = {"contrast": round(contrast, 2), "brightness": round(contrast * (0.5 - lo) - 0.5, 2),
+                "tint": hexed(255)}
+    if median > 0.55:
+        uniforms["invert"] = 1
+    return uniforms, hexed(18)
+
+
+def import_media(source, name=None):
+    """Port a picture, GIF or video (path or URL) into USER_WALLPAPERS as <name>.json + media."""
+    media_dir = USER_WALLPAPERS / "media"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    title = None
+    with tempfile.TemporaryDirectory(prefix="asciipaper-import-") as temporary:
+        if re.match(r"https?://", source):
+            print("Downloading…", file=sys.stderr)
+            path, title = fetch_media(source, temporary)
+        else:
+            path = Path(source).expanduser()
+            if not path.is_file():
+                sys.exit(f"asciipaper: no such file: {source}")
+        stem = name or re.sub(r"[^A-Za-z0-9 _-]+", "", title or path.stem).strip()[:40] or "ported"
+        stem = re.sub(r"\s*-\s*", "-", stem)
+        stem = re.sub(r"\s+", "-", stem).lower()
+        name, index = stem, 2
+        while (USER_WALLPAPERS / f"{name}.json").exists() or (USER_WALLPAPERS / f"{name}.html").exists() or name in PRESETS:
+            name, index = f"{stem}-{index}", index + 1
+        media = media_dir / f"{name}{path.suffix.lower() or '.bin'}"
+        shutil.copyfile(path, media)
+    try:
+        _, uniforms, background = make_frames(media)
+    except SystemExit:
+        media.unlink(missing_ok=True)
+        raise
+    spec = {"title": title or name, "media": f"media/{media.name}", "charset": CHARSETS["detailed"],
+            "cell": 7, "aspect": 0.55, "weight": 700, "fill": 0.25, "background": background, "uniforms": uniforms}
+    path = USER_WALLPAPERS / f"{name}.json"
+    path.write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    ensure_user_api()
+    spec_html(path)
+    return name
+
+
 def resolve(target):
     if target in PRESETS:
         return PRESETS[target]
     if "://" in target:
         return target
+    spec = spec_file(target)
+    if spec:
+        return spec_html(spec).as_uri()
     user_preset = USER_WALLPAPERS / f"{target}.html"
-    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _-]{0,47}", target) and user_preset.is_file():
+    if re.fullmatch(NAME_RE, target) and user_preset.is_file():
         return user_preset.resolve().as_uri()
     path = Path(target).expanduser().resolve()
     if not path.is_file():
         sys.exit(f"asciipaper: no such preset, URL or file: {target}\nPresets: {', '.join(PRESETS)}")
     return path.as_uri()
+
+
+def library():
+    """Built-in presets, then the user's wallpapers (HTML and specs), by name."""
+    names = set()
+    if USER_WALLPAPERS.is_dir():
+        names = {p.stem for pattern in ("*.html", "*.json") for p in USER_WALLPAPERS.glob(pattern)}
+    return [*PRESETS, *sorted(names - set(PRESETS))]
 
 
 HYPR = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "hypr" / os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "")
@@ -300,14 +524,27 @@ def watch_hyprland(callback):
 
 
 def engine_binary():
-    """asciipaper-engine beside this script (a source checkout) or on PATH, if built."""
-    local = Path(__file__).resolve().parent / "native/asciipaper-engine"
-    return str(local) if os.access(local, os.X_OK) else shutil.which("asciipaper-engine")
+    """asciipaper-engine in a source checkout, beside this script (installed), or on PATH."""
+    here = Path(__file__).resolve().parent
+    for candidate in (here / "native/asciipaper-engine", here / "asciipaper-engine"):
+        if os.access(candidate, os.X_OK):
+            return str(candidate)
+    return shutil.which("asciipaper-engine")
+
+
+def engine_args(target):
+    """How asciipaper-engine draws target, or None if it can't (then WebKit does)."""
+    binary = engine_binary()
+    if not binary or FLATPAK:
+        return None
+    if target in NATIVE:
+        return [binary, NATIVE[target]]
+    spec = spec_file(target)
+    return [binary, "--spec", str(spec), "--lib", str(LOCAL / "lib")] if spec else None
 
 
 def uses_engine(target):
-    return (target in NATIVE and not FLATPAK and bool(engine_binary())
-            and {**ENGINE_DEFAULTS, **load_engine_options()}["renderer"] != "web")
+    return bool(engine_args(target)) and {**ENGINE_DEFAULTS, **load_engine_options()}["renderer"] != "web"
 
 
 def engine_env():
@@ -321,7 +558,7 @@ def engine_env():
 
 def start_engine(target):
     """Start asciipaper-engine; write pause lines to its stdin (see pause_line)."""
-    return subprocess.Popen([engine_binary(), NATIVE[target]], stdin=subprocess.PIPE, text=True, bufsize=1, env=engine_env())
+    return subprocess.Popen(engine_args(target), stdin=subprocess.PIPE, text=True, bufsize=1, env=engine_env())
 
 
 def pause_line(engine, covered):
@@ -340,7 +577,8 @@ def service_elsewhere():
 def run_native(target):
     """The service with a native preset: just the engine, plus fullscreen pausing on Hyprland."""
     if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
-        os.execve(engine_binary(), [engine_binary(), NATIVE[target]], engine_env())   # nothing else to do; no Python left running
+        args = engine_args(target)
+        os.execve(args[0], args, engine_env())   # nothing else to do; no Python left running
     engine = start_engine(target)
     def refresh():
         try:
@@ -522,12 +760,12 @@ def run(target, studio=False, preview=False):
             wallpaper_windows(app)
             return
         close_views()
-        if engine["target"] == NATIVE[current_target] and engine["process"].poll() is None:
+        if engine["target"] == engine_args(current_target) and engine["process"].poll() is None:
             return
         stop_engine()
         if not layer_supported:
             return
-        engine["process"], engine["target"] = start_engine(current_target), NATIVE[current_target]
+        engine["process"], engine["target"] = start_engine(current_target), engine_args(current_target)
         app.hold()   # keep running with no windows while the engine draws
         refresh_paused()
 
@@ -807,8 +1045,14 @@ def set_wallpaper(target):
 def main():
     args = sys.argv[1:]
     if args[:1] == ["list"]:
-        user_presets = sorted(p.stem for p in USER_WALLPAPERS.glob("*.html")) if USER_WALLPAPERS.is_dir() else []
-        print("\n".join([*PRESETS, *user_presets]))
+        print("\n".join(library()))
+    elif args[:1] == ["import"] and len(args) in {2, 3}:
+        if len(args) == 3 and not re.fullmatch(NAME_RE, args[2]):
+            sys.exit("asciipaper: names use letters, numbers, spaces, _ and - (up to 48 characters)")
+        name = import_media(args[1], args[2] if len(args) == 3 else None)
+        print(f"Created {USER_WALLPAPERS / (name + '.json')}\n"
+              f"Change its look in the Studio (asciipaper --studio) or by editing that file; it updates live.")
+        set_wallpaper(name)
     elif args[:1] == ["create"]:
         if len(args) != 2 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _-]{0,47}", args[1]):
             sys.exit("Usage: asciipaper create <name>  (letters, numbers, spaces, _ and -; up to 48 characters)")

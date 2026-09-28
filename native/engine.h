@@ -22,6 +22,8 @@ struct scene {
 struct preset {
     const char *name, *charset, *font, *background, *glsl;   // glsl NULL: CPU scene via scene_put
     float cell, aspect, max_cells, time, period;
+    float fill;                                             // 0..1: each glyph's colour, faintly, behind it
+    int weight;                                             // font weight, 100..900 (0 = regular)
     const uint8_t *lut;                                     // 256 glyph indices, or NULL
     void (*resize)(struct scene *);
     void (*update)(struct scene *, float dt);
@@ -32,9 +34,10 @@ struct preset {
 
 extern const struct preset *const presets[];
 
-// For update(): set a uniform the preset's GLSL declares, or upload an RGBA texture (row 0 = top).
+// For update(): set a uniform the preset's GLSL declares, or upload an RGB (channels 3) or RGBA
+// (channels 4) texture it reads as `uniform sampler2D <name>` (row 0 = top).
 void scene_uniform(struct scene *, const char *name, int n, const float *v);
-void scene_texture(struct scene *, const char *name, int w, int h, const uint8_t *rgba);
+void scene_texture(struct scene *, const char *name, int w, int h, int channels, const uint8_t *pixels);
 
 static inline void scene_put(struct scene *s, int col, int row, float level, float r, float g, float b) {
     uint8_t *d = s->data + (row * s->cols + col) * 4;
