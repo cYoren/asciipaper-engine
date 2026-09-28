@@ -6,7 +6,7 @@
   if (window.asciipaper?.ascii) return;
   const here = document.currentScript?.src || location.href;   // lib/ (for media.glsl)
 
-  const options = Object.assign({fps: 24, idleFps: 12, quality: 1, pointer: 1, paused: false},
+  const options = Object.assign({fps: 24, idleFps: 12, quality: 1, pointer: 1, clicks: false, paused: false},
                                 window.__asciipaperOptions);
   const pointer = {x: .5, y: .5, vx: 0, vy: 0, down: false, inside: false, moved: -1e9, clicks: []};
 
@@ -70,6 +70,7 @@
     options.quality = Math.max(.5, Math.min(2, Number(options.quality) || 1));
     options.pointer = Math.max(0, Math.min(2, Number(options.pointer) || 0));
     options.paused = !!options.paused;
+    options.clicks = !!options.clicks;   // click effects (ripples) are opt-in
     const dpr = realDpr() * options.quality;
     if (dpr !== configuredDpr) {
       configuredDpr = dpr;
@@ -206,8 +207,9 @@ gl_FragColor=vec4(mix(under,d.gba,texture2D(atlas,uv).a),1.0);}`;
       gl.useProgram(cellProg);
       if (scene.data) { gl.activeTexture(gl.TEXTURE2); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, scene.cols, scene.rows, gl.RGBA, gl.UNSIGNED_BYTE, scene.data); }
       clicks.fill(0);
-      pointer.clicks.forEach((c, i) => clicks.set([c.x, c.y, (now - c.time) / 1000], i * 3));
-      for (let i = pointer.clicks.length; i < 8; i++) clicks[i * 3 + 2] = 1e4;
+      const shown = options.clicks ? pointer.clicks : [];
+      shown.forEach((c, i) => clicks.set([c.x, c.y, (now - c.time) / 1000], i * 3));
+      for (let i = shown.length; i < 8; i++) clicks[i * 3 + 2] = 1e4;
       gl.uniform1f(cellProg.u('u_time'), scene.time);
       gl.uniform2f(cellProg.u('u_pointer'), pointer.x, pointer.y); gl.uniform2f(cellProg.u('u_velocity'), pointer.vx, pointer.vy);
       gl.uniform1f(cellProg.u('u_down'), pointer.down ? 1 : 0); gl.uniform1f(cellProg.u('u_strength'), options.pointer);

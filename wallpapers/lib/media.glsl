@@ -1,4 +1,4 @@
-// defaults: {"fit": 0, "zoom": 1, "offset": [0, 0], "contrast": 1.15, "brightness": 0, "gamma": 1, "threshold": 0.06, "invert": 0, "colorMode": 0, "vivid": 0.5, "tint": "#e8b900", "tint2": "#ff3355", "lens": 1, "ripple": 1, "speed": 1, "backdrop": 0.3}
+// defaults: {"fit": 0, "zoom": 1, "offset": [0, 0], "contrast": 1.15, "brightness": 0, "gamma": 1, "threshold": 0.06, "invert": 0, "colorMode": 0, "vivid": 0.5, "tint": "#e8b900", "tint2": "#ff3355", "lens": 0, "ripple": 1, "speed": 1, "backdrop": 0.3}
 // The media shader: turns a picture, GIF or video into characters. Every uniform below is a setting a
 // wallpaper can change in its "uniforms" (colours as "#rrggbb"); the line above holds the defaults.
 // asciipaper sets `media` (the current frame) and `mediaSize` (its size in pixels).

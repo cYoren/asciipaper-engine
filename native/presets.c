@@ -34,49 +34,6 @@ static const struct preset matrix = {
 "}\n",
 };
 
-// ---- yin-yang.html
-struct yin_yang { float px, py, angle; };
-
-static void yin_yang_update(struct scene *s, float dt) {
-    struct yin_yang *y = s->state ? s->state : (s->state = calloc(1, sizeof *y));
-    if (!y->px && !y->py) y->px = y->py = .5f;
-    const struct pointer *p = s->pointer;
-    float k = s->strength;
-    y->px += ((p->inside ? p->x : .5f) - y->px) * .08f; y->py += ((p->inside ? p->y : .5f) - y->py) * .08f;
-    y->angle += dt * (.24f + fminf(hypotf(y->px - .5f, y->py - .5f) * k, .5f) * .9f);
-    float radius = fmaxf(30, fminf(s->width * .31f, s->height * .40f));
-    float center[2] = {s->width * (.5f + (y->px - .5f) * .12f * k), s->height * (.5f + (y->py - .5f) * .12f * k)};
-    float rot = y->angle + atan2f(y->py - .5f, y->px - .5f) * .10f * k;
-    scene_uniform(s, "radius", 1, &radius); scene_uniform(s, "center", 2, center); scene_uniform(s, "rot", 1, &rot);
-}
-
-static const struct preset yin_yang = {
-    .name = "yin-yang", .charset = " .,:;irsXA253hMHGS#9B&@·", .cell = 9, .aspect = 9.f / 15, .background = "#080909",
-    .update = yin_yang_update,
-    .glsl =
-"uniform vec2 center;uniform float radius,rot;\n"
-"vec4 cell(vec2 uv){\n"
-"  vec2 s=uv*u_size-center;\n"
-"  float ca=cos(rot),sa=sin(rot);\n"
-"  vec2 q=vec2(s.x*ca+s.y*sa,-s.x*sa+s.y*ca)/radius;\n"
-"  float r=length(q);\n"
-"  float ring=0.0;\n"
-"  for(int i=0;i<8;i++){vec3 k=u_clicks[i];\n"
-"    if(k.z<1.3)ring=max(ring,(1.0-k.z/1.3)*step(abs(length((uv-k.xy)*u_size)-k.z*0.7*radius),5.0));}\n"
-"  if(ring>0.0)return vec4(vec3(143.0,230.0,218.0)/255.0*ring*0.7+0.1,1.0);\n"
-"  if(r>1.035)return vec4(0.0);\n"
-"  bool white=q.x-0.42*sin(3.14159265*q.y)<0.0;\n"
-"  if(length(q-vec2(0.0,0.5))<0.14)white=false;\n"
-"  if(length(q+vec2(0.0,0.5))<0.14)white=true;\n"
-"  float grain=(sin(q.x*32.0+q.y*17.0)+cos(q.y*29.0-q.x*13.0))*0.5;\n"
-"  float shade=clamp(floor((r>0.92?0.55:0.58+grain*0.12)*22.0),0.0,22.0);\n"
-"  float glow=max(0.0,1.0-length(s/u_size)*2.3);\n"
-"  vec3 color=white?(vec3(196.0,208.0,206.0)+glow*vec3(59.0,47.0,49.0))/255.0\n"
-"                  :(vec3(30.0,91.0,91.0)+glow*vec3(24.0,55.0,55.0))/255.0;\n"
-"  return vec4(color,shade/23.0);\n"
-"}\n",
-};
-
 // ---- flow.html: stable fluids on the CPU (inject → advect → project), drawn with scene_put.
 #define FLOW_ITER 4
 #define RAMP_LEN 10
@@ -231,9 +188,9 @@ static void fluid_upload(struct scene *s, struct fluid *f) {
     scene_texture(s, "flow", f->columns, f->rows, 4, f->bytes);
 }
 
-static void fluid_resize(struct scene *s) {
-    struct fluid *f = s->state;
-    if (f) { free(f->front); free(f->bytes); } else f = s->state = calloc(1, sizeof *f);
+// (Re)size a field for this monitor's shape. Wallpapers that use one keep it first in their state.
+static void field_init(struct fluid *f, struct scene *s) {
+    free(f->front); free(f->bytes);
     f->aspect = clampf((float)s->width / s->height, .25f, 4);
     f->columns = f->aspect >= 1 ? 64 : roundf(64 * f->aspect);
     f->rows = f->aspect >= 1 ? roundf(64 / f->aspect) : 64;
@@ -242,13 +199,18 @@ static void fluid_resize(struct scene *s) {
     fluid_clear(f);
     fluid_upload(s, f);
 }
-static void fluid_update(struct scene *s, float dt) {
-    struct fluid *f = s->state;
+static void fluid_resize(struct scene *s) {
+    if (!s->state) s->state = calloc(1, sizeof(struct fluid));
+    field_init(s->state, s);
+}
+// One step of the field, uploaded as `flow` with `moving` telling the shader whether to read it.
+static void field_update(struct scene *s, struct fluid *f, float dt) {
     fluid_step(f, fminf(.05f, dt));
     float moving = fluid_active(f);
     if (moving) fluid_upload(s, f);
     scene_uniform(s, "moving", 1, &moving);
 }
+static void fluid_update(struct scene *s, float dt) { field_update(s, s->state, dt); }
 static void fluid_move(struct scene *s) {
     struct fluid *f = s->state;
     float x = s->pointer->x, y = s->pointer->y;
@@ -291,6 +253,50 @@ static const struct preset fluid = {
 "  float value=floor(light*255.0+0.5);\n"
 "  float r=value<10.0?0.0:min(255.0,value*1.45), g=r*185.0/232.0;\n"
 "  return vec4(r/255.0,g/255.0,0.0,floor(0.299*r+0.587*g)/255.0);\n"
+"}\n",
+};
+
+// ---- yin-yang.html: a slowly turning taijitu. The pointer doesn't move it; it stirs a liquid
+// (the same field as fluid) that bends the emblem and lights it where it flows.
+struct yin_yang { struct fluid field; float angle; };   // field first: fluid_move/fluid_leave use it
+
+static void yin_yang_resize(struct scene *s) {
+    if (!s->state) s->state = calloc(1, sizeof(struct yin_yang));
+    field_init(s->state, s);
+}
+static void yin_yang_update(struct scene *s, float dt) {
+    struct yin_yang *y = s->state;
+    y->angle += dt * .24f;
+    float radius = fmaxf(30, fminf(s->width * .31f, s->height * .40f)), center[2] = {s->width * .5f, s->height * .5f};
+    scene_uniform(s, "radius", 1, &radius); scene_uniform(s, "center", 2, center); scene_uniform(s, "rot", 1, &y->angle);
+    field_update(s, &y->field, dt);
+}
+
+static const struct preset yin_yang = {
+    .name = "yin-yang", .charset = " .,:;irsXA253hMHGS#9B&@·", .cell = 9, .aspect = 9.f / 15, .background = "#080909",
+    .resize = yin_yang_resize, .update = yin_yang_update, .pointer_move = fluid_move, .pointer_leave = fluid_leave,
+    .glsl =
+"uniform vec2 center;uniform float radius,rot,moving;uniform sampler2D flow;\n"
+"vec4 cell(vec2 uv){\n"
+"  vec3 f=moving>0.5?(texture2D(flow,uv).rgb-vec3(0.5,0.5,0.0))*vec3(0.36,0.36,0.8):vec3(0.0);\n"
+"  vec2 s=(uv-f.xy*0.9)*u_size-center;\n"
+"  float ca=cos(rot),sa=sin(rot);\n"
+"  vec2 q=vec2(s.x*ca+s.y*sa,-s.x*sa+s.y*ca)/radius;\n"
+"  float r=length(q);\n"
+"  float ring=0.0;\n"
+"  for(int i=0;i<8;i++){vec3 k=u_clicks[i];\n"
+"    if(k.z<1.3)ring=max(ring,(1.0-k.z/1.3)*step(abs(length((uv-k.xy)*u_size)-k.z*0.7*radius),5.0));}\n"
+"  if(ring>0.0)return vec4(vec3(143.0,230.0,218.0)/255.0*ring*0.7+0.1,1.0);\n"
+"  if(r>1.035)return vec4(vec3(143.0,230.0,218.0)/255.0*f.z,f.z*0.5);\n"
+"  bool white=q.x-0.42*sin(3.14159265*q.y)<0.0;\n"
+"  if(length(q-vec2(0.0,0.5))<0.14)white=false;\n"
+"  if(length(q+vec2(0.0,0.5))<0.14)white=true;\n"
+"  float grain=(sin(q.x*32.0+q.y*17.0)+cos(q.y*29.0-q.x*13.0))*0.5;\n"
+"  float shade=clamp(floor((r>0.92?0.55:0.58+grain*0.12)*22.0),0.0,22.0);\n"
+"  float glow=max(0.0,1.0-length(s/u_size)*2.3)+f.z*0.8;\n"
+"  vec3 color=white?(vec3(196.0,208.0,206.0)+glow*vec3(59.0,47.0,49.0))/255.0\n"
+"                  :(vec3(30.0,91.0,91.0)+glow*vec3(24.0,55.0,55.0))/255.0;\n"
+"  return vec4(color,shade/23.0);\n"
 "}\n",
 };
 
