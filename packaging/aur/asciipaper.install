@@ -1,0 +1,9 @@
+post_install() {
+  echo '==> Start the wallpaper for your user (and at every login):'
+  echo '      systemctl --user enable --now asciipaper.service'
+  echo '==> Then open "asciipaper" from your launcher, or run: asciipaper --studio'
+}
+
+post_upgrade() {
+  echo '==> Restart the wallpaper to use the new version: systemctl --user restart asciipaper.service'
+}

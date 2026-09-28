@@ -1,0 +1,27 @@
+pkgbase = asciipaper
+	pkgdesc = Live, interactive ASCII wallpapers for Wayland; port any picture, GIF or video into one
+	pkgver = 1.0.0
+	pkgrel = 1
+	url = https://github.com/cYoren/asciipaper
+	install = asciipaper.install
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = wayland-protocols
+	depends = python
+	depends = python-gobject
+	depends = gtk4
+	depends = libadwaita
+	depends = gtk4-layer-shell
+	depends = webkitgtk-6.0
+	depends = wayland
+	depends = libglvnd
+	depends = pango
+	depends = cairo
+	depends = glib2
+	depends = hicolor-icon-theme
+	optdepends = ffmpeg: port pictures, GIFs and videos, and record wallpapers to video
+	source = asciipaper-1.0.0.tar.gz::https://github.com/cYoren/asciipaper/archive/refs/tags/v1.0.0.tar.gz
+	sha256sums = f50edc71d7998081fc2ec9c95aee9fa0f35ff37d98be7424e091ece4f9494496
+
+pkgname = asciipaper

@@ -1,0 +1,27 @@
+# Maintainer: cYoren <32225578+cYoren@users.noreply.github.com>
+pkgname=asciipaper
+pkgver=1.0.0
+pkgrel=1
+pkgdesc='Live, interactive ASCII wallpapers for Wayland; port any picture, GIF or video into one'
+arch=('x86_64' 'aarch64')
+url='https://github.com/cYoren/asciipaper'
+license=('MIT')
+depends=('python' 'python-gobject' 'gtk4' 'libadwaita' 'gtk4-layer-shell' 'webkitgtk-6.0'
+         'wayland' 'libglvnd' 'pango' 'cairo' 'glib2' 'hicolor-icon-theme')
+makedepends=('wayland-protocols')
+optdepends=('ffmpeg: port pictures, GIFs and videos, and record wallpapers to video')
+install=asciipaper.install
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('f50edc71d7998081fc2ec9c95aee9fa0f35ff37d98be7424e091ece4f9494496')
+
+build() {
+  cd "$pkgname-$pkgver"
+  make
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  make DESTDIR="$pkgdir" PREFIX=/usr install
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 licenses/asciify-engine-MIT.txt "$pkgdir/usr/share/licenses/$pkgname/asciify-engine-MIT.txt"
+}
