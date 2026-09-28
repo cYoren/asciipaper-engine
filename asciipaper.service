@@ -5,6 +5,7 @@ PartOf=graphical-session.target
 
 [Service]
 ExecStart=%h/.local/bin/asciipaper
+Environment=ASCIIPAPER_SERVICE=1
 Restart=on-failure
 RestartSec=2
 

@@ -42,7 +42,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 # gtk4-layer-shell must be linked before libwayland; for Python that means preloading it.
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 FLATPAK = os.environ.get("FLATPAK_ID") == "io.github.cyoren.asciipaper"
 PRELOAD = ("/app/lib/libgtk4-layer-shell.so.0" if FLATPAK else
            "/usr/lib/libgtk4-layer-shell.so")
@@ -71,7 +71,7 @@ PRESETS = {
 NATIVE = {"fluid": "fluid", "asciify": "fluid", "flow": "flow", "matrix": "matrix", "yin-yang": "yin-yang"}
 SERVICE = "asciipaper.service"
 
-ENGINE_DEFAULTS = {"fps": 24, "idleFps": 12, "quality": 1.0, "pointer": 1.0, "renderer": "native"}
+ENGINE_DEFAULTS = {"fps": 24, "idleFps": 12, "quality": 1.0, "pointer": 1.0, "clicks": False, "renderer": "native"}
 
 # Wallpapers must never scroll; everything else about the page is the author's.
 CSS = "html, body { margin:0; overflow:hidden !important; }"
@@ -229,10 +229,15 @@ CHARSETS = {
 MAX_FRAMES, FRAME_WIDTH, MAX_FPS = 600, 256, 30
 
 
+BUILTIN_SPECS = LOCAL / "specs"   # built-in shader wallpapers: add NAME.json + NAME.glsl here
+
+
 def spec_file(target):
-    """The spec JSON a target names (a library name or a .json path), or None."""
-    if re.fullmatch(NAME_RE, target) and (USER_WALLPAPERS / f"{target}.json").is_file():
-        return USER_WALLPAPERS / f"{target}.json"
+    """The spec JSON a target names (a library name, a built-in, or a .json path), or None."""
+    if re.fullmatch(NAME_RE, target):
+        for folder in (USER_WALLPAPERS, BUILTIN_SPECS):
+            if (folder / f"{target}.json").is_file():
+                return folder / f"{target}.json"
     path = Path(target).expanduser()
     return path.resolve() if path.suffix.lower() == ".json" and path.is_file() else None
 
@@ -290,6 +295,9 @@ def spec_html(path):
 <script>asciipaper.spec({json.dumps(runtime).replace("</", "<\\/")});</script>
 """
     output = path.with_suffix(".html")
+    if is_builtin_spec(path):   # the install folder may be read-only, and a checkout shouldn't collect pages
+        output = USER_WALLPAPERS / "builtin" / f"{path.stem}.html"
+        output.parent.mkdir(parents=True, exist_ok=True)
     if not output.exists() or output.read_text(encoding="utf-8") != page:
         output.write_text(page, encoding="utf-8")
     if not (output.parent / "lib/asciipaper.js").exists() and (LOCAL / "lib/asciipaper.js").is_file():
@@ -402,7 +410,7 @@ def import_media(source, name=None):
         stem = re.sub(r"\s*-\s*", "-", stem)
         stem = re.sub(r"\s+", "-", stem).lower()
         name, index = stem, 2
-        while (USER_WALLPAPERS / f"{name}.json").exists() or (USER_WALLPAPERS / f"{name}.html").exists() or name in PRESETS:
+        while taken(name):
             name, index = f"{stem}-{index}", index + 1
         media = media_dir / f"{name}{path.suffix.lower() or '.bin'}"
         shutil.copyfile(path, media)
@@ -427,6 +435,10 @@ _thumbnail_slots = threading.Semaphore(2)
 def request_thumbnail(name, callback):
     """Render name offscreen with asciipaper-engine (cached until its files change); callback(path)
     runs on a worker thread. Wallpapers the engine can't draw (HTML) get no thumbnail."""
+    shipped = LOCAL / "thumbnails" / f"{name}.jpg"
+    if shipped.is_file():
+        callback(shipped)
+        return
     args = engine_args(name)
     if not args:
         return
@@ -576,12 +588,42 @@ def resolve(target):
     return path.as_uri()
 
 
+def is_builtin_spec(path):
+    return Path(path).resolve().parent == BUILTIN_SPECS.resolve()
+
+
+def taken(name):
+    """Is a wallpaper name in use (built-in or the user's)?"""
+    return (name in PRESETS or (BUILTIN_SPECS / f"{name}.json").exists() or
+            (USER_WALLPAPERS / f"{name}.json").exists() or (USER_WALLPAPERS / f"{name}.html").exists())
+
+
 def library():
-    """Built-in presets, then the user's wallpapers (HTML and specs), by name."""
+    """Built-in scenes and shader wallpapers, then the user's wallpapers (HTML and specs), by name."""
+    builtin = sorted(p.stem for p in BUILTIN_SPECS.glob("*.json")) if BUILTIN_SPECS.is_dir() else []
     names = set()
     if USER_WALLPAPERS.is_dir():
         names = {p.stem for pattern in ("*.html", "*.json") for p in USER_WALLPAPERS.glob(pattern)}
-    return [*PRESETS, *sorted(names - set(PRESETS))]
+    return [*PRESETS, *builtin, *sorted(names - set(PRESETS) - set(builtin))]
+
+
+def copy_builtin(name):
+    """Make the user's own copy of a built-in shader wallpaper (to customize it); return its name."""
+    source = BUILTIN_SPECS / f"{name}.json"
+    spec = read_spec(source)
+    copy, index = f"{name}-mine", 2
+    while taken(copy):
+        copy, index = f"{name}-mine-{index}", index + 1
+    USER_WALLPAPERS.mkdir(parents=True, exist_ok=True)
+    shader = spec.get("shader")
+    if isinstance(shader, str) and shader.endswith(".glsl") and "/" not in shader:
+        shutil.copyfile(BUILTIN_SPECS / shader, USER_WALLPAPERS / f"{copy}.glsl")
+        spec["shader"] = f"{copy}.glsl"
+    spec["title"] = f"{spec.get('title', name)} (mine)"
+    (USER_WALLPAPERS / f"{copy}.json").write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    ensure_user_api()
+    spec_html(USER_WALLPAPERS / f"{copy}.json")
+    return copy
 
 
 HYPR = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "hypr" / os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "")
@@ -664,10 +706,20 @@ def pause_line(engine, covered):
         pass   # the engine exited; its owner notices
 
 
+def is_service():
+    """Is this process the wallpaper service? Its unit sets ASCIIPAPER_SERVICE=1. (INVOCATION_ID
+    isn't enough: desktops like Omarchy start every app in a systemd scope.)"""
+    return os.environ.get("ASCIIPAPER_SERVICE") == "1"
+
+
 def service_elsewhere():
-    """True when the systemd service is running and this process is not it."""
-    return (not FLATPAK and "INVOCATION_ID" not in os.environ and
-            subprocess.run(["systemctl", "--user", "is-active", "--quiet", SERVICE]).returncode == 0)
+    """True when the systemd service shows the wallpapers and this process isn't it: then the
+    Studio and the command line switch the service instead of drawing wallpapers themselves."""
+    if FLATPAK or is_service():
+        return False
+    state = subprocess.run(["systemctl", "--user", "show", "-p", "LoadState", "--value", SERVICE],
+                           capture_output=True, text=True).stdout.strip()
+    return state == "loaded"
 
 
 def run_native(target):
@@ -688,9 +740,9 @@ def run_native(target):
 
 def run(target, studio=False, preview=False):
     resolve(target)
+    if not studio and not preview and service_elsewhere():
+        return set_wallpaper(target)   # switch the service instead of stacking a second wallpaper
     if not studio and not preview and uses_engine(target):
-        if "INVOCATION_ID" not in os.environ and service_elsewhere():
-            return set_wallpaper(target)   # switch the running service instead of stacking a second wallpaper
         return run_native(target)
     env = dict(os.environ)
     if os.path.exists(PRELOAD):
@@ -730,6 +782,14 @@ def run(target, studio=False, preview=False):
 
     inject_engine()
     views, started = {}, False   # view -> monitor connector name
+
+    def options_file_changed(*_):   # the Studio (another process) changed settings
+        engine_options.update(load_engine_options())
+        inject_engine()
+        for view in views:
+            js(view, f"window.asciipaper?.set({json.dumps(engine_options)})")
+    options_monitor = Gio.File.new_for_path(str(ENGINE_CONFIG)).monitor_file(Gio.FileMonitorFlags.NONE, None)
+    options_monitor.connect("changed", options_file_changed)
     engine = {"process": None, "target": None}   # a native wallpaper hosted by this process
     paused = set()
     layer_supported = Layer.is_supported()
@@ -843,15 +903,13 @@ def run(target, studio=False, preview=False):
             app.release()
 
     def show_wallpaper(app):
-        """Show current_target: on the native engine for built-in presets, in WebKit otherwise."""
-        native = uses_engine(current_target)
+        """Show current_target. With the service installed, it does the drawing: restart it on the
+        saved choice. Without it (a plain checkout), this process draws: natively when it can."""
         if service_elsewhere():
-            # The service is drawing a native preset (a WebKit service would host this Studio).
-            if native:
-                close_views(); stop_engine()
-                subprocess.run(["systemctl", "--user", "restart", SERVICE])
-                return
-            subprocess.run(["systemctl", "--user", "stop", SERVICE])
+            close_views(); stop_engine()
+            subprocess.run(["systemctl", "--user", "restart", SERVICE])
+            return
+        native = uses_engine(current_target)
         if not native:
             stop_engine()
             wallpaper_windows(app)
@@ -875,7 +933,7 @@ def run(target, studio=False, preview=False):
     watch_folder(resolve(target))
     watch_hyprland(lambda: GLib.idle_add(refresh_paused))
     studio_window_ref = None
-    unique = not preview and not os.environ.get("ASCIIPAPER_STUDIO_SNAPSHOT")
+    unique = not preview and not os.environ.get("ASCIIPAPER_STUDIO_SNAPSHOT") and not is_service()
     app = Adw.Application(application_id="io.github.cyoren.asciipaper" if unique else None,
                           flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
 
@@ -975,7 +1033,7 @@ def run(target, studio=False, preview=False):
         # ---- Look: the selected spec wallpaper's settings, written to its JSON; the engine redraws live.
         look = Adw.PreferencesGroup(title="Look", description="Changes appear on your desktop as you make them.")
         page.add(look)
-        look_rows, look_state = [], {"path": None, "spec": None, "defaults": {}, "loading": False, "pending": 0}
+        look_rows, look_state = [], {"path": None, "spec": None, "defaults": {}, "loading": False, "pending": 0, "builtin": False}
 
         def save_look():
             look_state["pending"] = 0
@@ -988,6 +1046,13 @@ def run(target, studio=False, preview=False):
         def look_changed(key, value):
             if look_state["loading"] or look_state["spec"] is None:
                 return
+            if look_state["builtin"]:   # built-ins stay as shipped: customize your own copy
+                name = copy_builtin(current_target)
+                set_target(name); show_wallpaper(app)
+                path = USER_WALLPAPERS / f"{name}.json"
+                look_state.update(path=path, spec=read_spec(path), builtin=False)
+                refresh_gallery(select=name)
+                toast(f"Customizing your copy: {name}")
             spec = look_state["spec"]
             if key.startswith("uniforms."):
                 spec.setdefault("uniforms", {})[key[9:]] = value
@@ -1075,7 +1140,7 @@ def run(target, studio=False, preview=False):
             except (OSError, SystemExit):
                 defaults = {}
             media = bool(spec.get("media"))
-            look_state.update(path=path, spec=spec, defaults=defaults, loading=True)
+            look_state.update(path=path, spec=spec, defaults=defaults, loading=True, builtin=is_builtin_spec(path))
             for row, media_only, load in look_rows:
                 row.set_visible(media or not media_only)
                 load()
@@ -1093,6 +1158,10 @@ def run(target, studio=False, preview=False):
             show_wallpaper(app)
         renderer.connect("notify::selected", renderer_changed)
 
+        clicks = Adw.SwitchRow(title="Click effects", subtitle="Ripples where you click on the desktop",
+                               active=bool(engine_options.get("clicks")))
+        clicks.connect("notify::active", lambda row, _: set_engine_options({"clicks": row.get_active()}))
+        performance.add(clicks)
         scales = {}
         for key, title, subtitle, low, high, step in (
                 ("fps", "Frame rate", "While the pointer is on the desktop", 10, 60, 1),
@@ -1460,7 +1529,7 @@ def main():
         name = args[1]
         if not re.fullmatch(NAME_RE, name):
             sys.exit("Usage: asciipaper create <name> [--html]  (letters, numbers, spaces, _ and -; up to 48 characters)")
-        if name in PRESETS or (USER_WALLPAPERS / f"{name}.json").exists() or (USER_WALLPAPERS / f"{name}.html").exists():
+        if taken(name):
             sys.exit(f"asciipaper: {name!r} already exists; choose another name")
         USER_WALLPAPERS.mkdir(parents=True, exist_ok=True)
         ensure_user_api()

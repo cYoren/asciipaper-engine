@@ -105,7 +105,7 @@ static char spec_shader[4096];   // the spec's shader file, when it has one
 static const struct preset *pending;   // a reloaded spec waiting for a GL context to compile in
 static const char *snapshot;           // render once to this PNG instead of running
 
-static struct { double fps, idle_fps, quality, pointer; } options = {24, 12, 1, 1};
+static struct { double fps, idle_fps, quality, pointer; int clicks; } options = {24, 12, 1, 1, 0};
 static char engine_json[4096];
 
 static double now_seconds(void) {
@@ -132,6 +132,8 @@ static int load_options(void) {
     options.idle_fps = clampd(options.idle_fps, 1, options.fps);
     options.quality = clampd(options.quality, .5, 2);
     options.pointer = clampd(options.pointer, 0, 2);
+    char *clicks = strstr(text, "\"clicks\"");   // click effects (ripples) are opt-in
+    options.clicks = clicks && (clicks = strchr(clicks, ':')) && !strncmp(clicks + 1 + strspn(clicks + 1, " \t"), "true", 4);
     return quality != options.quality;
 }
 
@@ -346,6 +348,7 @@ void scene_texture(struct scene *s, const char *name, int w, int h, int channels
         o->ntextures++;
         snprintf(o->textures[i].name, sizeof o->textures[i].name, "%s", name);
         o->textures[i].tex = texture(GL_LINEAR);
+        o->textures[i].w = o->textures[i].h = 0;   // new storage: the upload below must allocate it
     }
     glBindTexture(GL_TEXTURE_2D, o->textures[i].tex);
     if (o->textures[i].w == w && o->textures[i].h == h)
@@ -383,9 +386,10 @@ static void draw(struct output *o, double now) {
     }
     float clicks[MAX_CLICKS * 3];
     for (int i = 0; i < MAX_CLICKS; i++) {
-        clicks[i * 3] = i < o->nclicks ? o->clicks[i].x : 0;
-        clicks[i * 3 + 1] = i < o->nclicks ? o->clicks[i].y : 0;
-        clicks[i * 3 + 2] = i < o->nclicks ? now - o->clicks[i].time : 1e4;
+        int shown = options.clicks && i < o->nclicks;
+        clicks[i * 3] = shown ? o->clicks[i].x : 0;
+        clicks[i * 3 + 1] = shown ? o->clicks[i].y : 0;
+        clicks[i * 3 + 2] = shown ? now - o->clicks[i].time : 1e4;
     }
     struct pointer *p = &o->pointer;
     glUniform1f(glGetUniformLocation(cell_prog, "u_time"), s->time);
