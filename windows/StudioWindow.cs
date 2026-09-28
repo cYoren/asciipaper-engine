@@ -100,6 +100,10 @@ sealed class StudioWindow : Form
                 app.SpecChanged(p.Str("name"));
                 return true;
             case "saveThumb": return Library.SaveThumb(p.Str("name"), p.Str("data"));
+            case "copyBuiltin":
+                var copy = Library.CopyBuiltin(p.Str("name"));
+                await app.Apply(copy);
+                return new Dictionary<string, object> { ["name"] = copy, ["state"] = app.State() };
             case "remove": await app.Remove(p.Str("name")); return app.State();
             case "newShader":
                 Library.NewShader(p.Str("name"));

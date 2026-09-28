@@ -1,18 +1,22 @@
 # asciipaper
 
-Live, interactive **ASCII wallpapers**. Pick one of the built-in scenes, or port any picture, GIF or video (even a post on X) into ASCII art that moves on your desktop and reacts to your pointer. Write your own as a single GLSL function, and take them to Windows and macOS too.
+Live **ASCII wallpapers** for Windows and Linux. Pick one and click Apply, or turn any picture, GIF or video (even a post on X) into ASCII art that moves on your desktop. Write your own as a single GLSL function.
+
+**[⬇ Download for Windows 10 and 11](https://github.com/cYoren/asciipaper/releases/latest)** (`asciipaper-setup-….exe`) · Linux: [below](#install)
 
 ![asciipaper running the Fluid wallpaper on the Omarchy desktop](assets/demo.gif)
 
-![The built-in wallpapers and two ports: a video (a Mandelbrot zoom) and a picture](assets/gallery.png)
+![Built-in wallpapers: fluid, donut, synthwave, tunnel, fire, yin-yang, ocean, matrix, starfield, plasma, flow, and a ported video](assets/gallery.jpg)
 
-- **Light.** A small native engine (C, OpenGL ES) draws on the GPU: under 1% of a CPU core and about 100 MB, where a web view needs about 1 GB. It stops drawing behind fullscreen windows and on monitors the compositor isn't showing.
-- **Interactive.** A hover lens, click ripples, fluid wakes: wallpapers see the pointer whenever it's over the desktop.
+- **Light.** A small native engine (C, OpenGL ES) draws on the GPU: under 1% of a CPU core and about 100 MB on Linux. Wallpapers stop drawing behind fullscreen and maximized windows, and while the PC is locked.
+- **Calm by default.** Wallpapers react to the pointer like liquid (fluid, yin-yang) and never chase it. Click ripples and the hover lens are there if you want them (Settings, Customize).
 - **Port anything.** Pictures, GIFs, videos, links, and posts on X or Twitter. asciipaper measures the media and picks a starting look: levels, colours, and which parts get the dense characters.
 - **Customizable, live.** Characters, size, weight, glow, colours, contrast, fit, backdrop and effects all change on your desktop as you move the sliders.
-- **Everywhere it can be.** Native on Wayland desktops with layer-shell (Hyprland, KDE Plasma, Sway, niri, COSMIC, river, Wayfire, labwc). One export for Wallpaper Engine and Lively on Windows and Plash on macOS. Videos and GIFs for everything else.
+- **Windows and Linux.** A Windows app with an installer (behind your desktop icons, every monitor, tray icon, starts with Windows). On Linux, Wayland desktops with layer-shell (Hyprland, KDE Plasma, Sway, niri, COSMIC, river, Wayfire, labwc). Exports for Wallpaper Engine, Lively and Plash (macOS); videos and GIFs for everything else.
 
 ## Install
+
+**Windows 10 and 11**: download `asciipaper-setup-….exe` from [Releases](https://github.com/cYoren/asciipaper/releases/latest) and run it. No administrator rights and nothing else to install (it uses .NET Framework and WebView2, which come with Windows). The installer isn't code-signed yet, so Windows may say it "protected your PC": choose **More info → Run anyway**. asciipaper then lives in the tray and starts with Windows.
 
 **Arch Linux** (AUR):
 
@@ -59,6 +63,10 @@ asciipaper render aurora aurora.mp4    # record a video or GIF
 
 Everything the Studio's Look panel changes lives in that file, so you can also edit it by hand while it runs.
 
+## Add a wallpaper to asciipaper
+
+Built-in wallpapers are just files. Put `NAME.json` and `NAME.glsl` (the spec format below) in [`wallpapers/specs/`](wallpapers/specs/) and it appears in both apps, on Windows and Linux, and in exports: no code to change. Add a thumbnail with `native/asciipaper-engine --spec wallpapers/specs/NAME.json --lib wallpapers/lib --snapshot wallpapers/thumbnails/NAME.jpg --size 960x540 --seconds 3` and open a pull request. Customizing a built-in in the apps makes your own copy, so the originals stay as shipped.
+
 ## Make your own
 
 A wallpaper can be a **shader spec**: a JSON file plus a GLSL function that runs once per character. asciipaper-engine runs it natively; the same files run in a browser, so they export to Windows and macOS unchanged.
@@ -78,7 +86,7 @@ vec4 cell(vec2 uv) {                       // uv: this character's centre, 0..1 
 }
 ```
 
-Built-in uniforms: `u_time` (s), `u_grid` (columns, rows), `u_size` (px), `u_aspect`, `u_pointer` (0..1), `u_velocity`, `u_down`, `u_idle` (s since the pointer moved), `u_strength` (the pointer setting) and `u_clicks[8]` (x, y, age in s). A shader error prints to the terminal (or `journalctl --user -u asciipaper`) and the last good version keeps running.
+Built-in uniforms: `u_time` (s), `u_grid` (columns, rows), `u_size` (px), `u_aspect`, `u_pointer` (0..1), `u_velocity`, `u_down`, `u_idle` (s since the pointer moved), `u_strength` (the pointer setting) and `u_clicks[8]` (x, y, age in s; empty unless the user turned on click effects). A shader error prints to the terminal (or `journalctl --user -u asciipaper`) and the last good version keeps running.
 
 The spec (`aurora.json`):
 
@@ -94,7 +102,7 @@ The spec (`aurora.json`):
 | `maxCells` | caps the grid on huge screens (default 40000) |
 | `uniforms` | values for the shader's uniforms: numbers, `[x, y]`, or `"#rrggbb"` colours |
 
-The media shader's settings (`uniforms` of a port) are `fit` (0 whole picture, 1 fill), `zoom`, `offset`, `contrast`, `brightness`, `gamma`, `threshold`, `invert`, `colorMode` (0 own colours, 1 tint, 2 gradient), `vivid`, `tint`, `tint2`, `backdrop`, `lens`, `ripple` and `speed`. See [`wallpapers/lib/media.glsl`](wallpapers/lib/media.glsl).
+The media shader's settings (`uniforms` of a port) are `fit` (0 whole picture, 1 fill), `zoom`, `offset`, `contrast`, `brightness`, `gamma`, `threshold`, `invert`, `colorMode` (0 own colours, 1 tint, 2 gradient), `vivid`, `tint`, `tint2`, `backdrop`, `lens` (hover magnifier, off by default), `ripple` (needs click effects on) and `speed`. See [`wallpapers/lib/media.glsl`](wallpapers/lib/media.glsl).
 
 ### HTML wallpapers
 

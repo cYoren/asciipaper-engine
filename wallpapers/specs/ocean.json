@@ -1,0 +1,9 @@
+{
+  "title": "Ocean",
+  "shader": "ocean.glsl",
+  "charset": " .~-=≈*o@",
+  "cell": 8,
+  "aspect": 0.55,
+  "fill": 0.18,
+  "background": "#01040a"
+}

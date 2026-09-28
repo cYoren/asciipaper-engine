@@ -1,0 +1,10 @@
+{
+  "title": "Synthwave",
+  "shader": "synthwave.glsl",
+  "charset": " .:-=+*#%@",
+  "cell": 8,
+  "aspect": 0.55,
+  "weight": 700,
+  "fill": 0.2,
+  "background": "#0b0214"
+}

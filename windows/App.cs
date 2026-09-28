@@ -86,7 +86,8 @@ sealed class App : ApplicationContext
     public bool Paused => config.TryGetValue("paused", out var p) && p is true;
     string Options => Json.Compact(new Dictionary<string, object> {
         ["fps"] = config.Num("fps", 24), ["idleFps"] = config.Num("idleFps", 12),
-        ["quality"] = config.Num("quality", 1), ["pointer"] = config.Num("pointer", 1) });
+        ["quality"] = config.Num("quality", 1), ["pointer"] = config.Num("pointer", 1),
+        ["clicks"] = config.TryGetValue("clicks", out var c) && c is true });   // click effects are opt-in
 
     static Dictionary<string, object> LoadConfig(out bool firstRun)
     {
@@ -185,6 +186,7 @@ sealed class App : ApplicationContext
     {
         foreach (var key in new[] { "fps", "idleFps", "quality", "pointer" })
             if (options != null && options.ContainsKey(key)) config[key] = options.Num(key, 1);
+        if (options != null && options.TryGetValue("clicks", out var clicks)) config["clicks"] = clicks is true;
         SaveConfig();
         foreach (var w in wallpapers) await w.SetOptions(Options);
     }
@@ -347,6 +349,11 @@ sealed class App : ApplicationContext
             await studio.Run("document.querySelector('#controls select').value = document.querySelector('#controls select').options[2].value; document.querySelector('#controls select').dispatchEvent(new Event('change'))");
             await Task.Delay(4000);
             await Shots("4-customized");
+
+            await Apply("tunnel");   // a built-in shader wallpaper (wallpapers/specs)
+            await Task.Delay(6000);
+            Note($"built-in: current={Current}");
+            await Shots("5-builtin");
             Note("done");
         }
         catch (Exception error) { Note("FAILED: " + error); }

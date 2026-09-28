@@ -67,7 +67,7 @@ function render() {
   $('#pause').textContent = state.paused ? 'Resume' : 'Pause';
   $('#pause').setAttribute('aria-pressed', state.paused);
   $('#now-hint').textContent = state.paused ? 'Paused. Resume to bring it back.' :
-    'Move your mouse over the desktop: it reacts. Click to send a ripple.';
+    'It lives behind your desktop icons, and pauses by itself while a window covers the screen.';
 
   const gallery = $('#gallery');
   gallery.replaceChildren(...state.library.map(w => {
@@ -218,7 +218,13 @@ const CONTROLS = [
 ];
 
 async function openDrawer(name) {
-  const w = item(name);
+  let w = item(name);
+  if (!w.own) {   // built-ins stay as shipped: customize your own copy
+    const copy = await host.call('copyBuiltin', {name}).catch(fail);
+    if (!copy) return;
+    update(copy.state); w = item(copy.name); name = copy.name;
+    toast(`Customizing your copy: ${w.title}`);
+  }
   editing = name;
   const spec = await (await fetch(w.spec, {cache: 'no-store'})).json();
   let defaults = {};
@@ -297,6 +303,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && editing) c
 $('#pause').addEventListener('click', () => host.call('pause', {paused: !state.paused}).then(update).catch(fail));
 $('#open-settings').addEventListener('click', () => {
   $('#autostart').checked = state.autostart;
+  $('#clicks').checked = !!state.options.clicks;
   for (const key of ['fps', 'idleFps', 'quality', 'pointer']) {
     const input = $('#' + key); input.value = state.options[key]; input.nextElementSibling.value = input.value;
   }
@@ -304,6 +311,7 @@ $('#open-settings').addEventListener('click', () => {
   $('#settings').showModal();
 });
 $('#autostart').addEventListener('change', e => host.call('setAutostart', {on: e.target.checked}).then(update).catch(fail));
+$('#clicks').addEventListener('change', e => host.call('setOptions', {options: {clicks: e.target.checked}}).then(update).catch(fail));
 for (const key of ['fps', 'idleFps', 'quality', 'pointer']) {
   const input = $('#' + key);
   input.addEventListener('input', () => { input.nextElementSibling.value = input.value; });

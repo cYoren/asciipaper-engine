@@ -20,6 +20,11 @@
   </developer>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="1.1.0" date="2026-09-28">
+      <description>
+        <p>asciipaper for Windows. Seven new built-in wallpapers (donut, tunnel, starfield, fire, ocean, synthwave, plasma), added as plain files. Yin-yang now reacts like liquid. Click effects and the hover lens are off by default. Fixes: customizing a ported wallpaper could blank it; the Studio could draw a second wallpaper on top of the service.</p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-09-28">
       <description>
         <p>Native engine for the built-in presets, porting pictures, GIFs and videos, wallpaper specs, a new Studio, and one export for Windows and macOS.</p>

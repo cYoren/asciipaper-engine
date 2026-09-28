@@ -5,7 +5,7 @@ window.mockHost = (() => {
   const spec = n => ({name: n, title: n, kind: 'spec', url: `/app/wallpapers/run.html?spec=/library/${n}.json`,
                       spec: `/library/${n}.json`, thumb: null, own: true});
   const state = {current: 'fluid', paused: false, autostart: true, version: 'dev',
-                 options: {fps: 24, idleFps: 12, quality: 1, pointer: 1},
+                 options: {fps: 24, idleFps: 12, quality: 1, pointer: 1, clicks: false},
                  library: [...['fluid', 'flow', 'matrix', 'yin-yang'].map(preset), ...['mandelbrot', 'sketch'].map(spec)]};
   const copy = () => JSON.parse(JSON.stringify(state));
   const methods = {

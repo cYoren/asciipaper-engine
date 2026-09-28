@@ -51,7 +51,11 @@ static class Library
     public static string SpecPath(string name) => Path.Combine(Folder, name + ".json");
     static string Url(string relative) => "/" + string.Join("/", relative.Split('/').Select(Uri.EscapeDataString));
 
-    public static bool Exists(string name) => Presets.Contains(name) ||
+    // Built-in shader wallpapers: app\wallpapers\specs\NAME.json (+ its .glsl). Adding one is just adding the files.
+    static string BuiltinSpecs => Path.Combine(App, @"wallpapers\specs");
+    static bool IsBuiltinSpec(string name) => Valid(name) && File.Exists(Path.Combine(BuiltinSpecs, name + ".json"));
+
+    public static bool Exists(string name) => Presets.Contains(name) || IsBuiltinSpec(name) ||
         (Valid(name) && (File.Exists(SpecPath(name)) || File.Exists(Path.Combine(Folder, name + ".html"))));
 
     // Every wallpaper, as the Studio shows it. `url` runs it; `spec` is its JSON, if it has one.
@@ -61,6 +65,16 @@ static class Library
             ["name"] = n, ["title"] = n, ["kind"] = "preset", ["own"] = false,
             ["url"] = Url($"app/wallpapers/{n}.html"),
             ["thumb"] = File.Exists(Path.Combine(App, $@"wallpapers\thumbnails\{n}.jpg")) ? Url($"app/wallpapers/thumbnails/{n}.jpg") : null }).ToList();
+        if (Directory.Exists(BuiltinSpecs))
+            foreach (var name in Directory.GetFiles(BuiltinSpecs, "*.json").Select(Path.GetFileNameWithoutExtension).Where(Valid).OrderBy(n => n, StringComparer.OrdinalIgnoreCase))
+            {
+                string title = name;
+                try { title = Json.Object(File.ReadAllText(Path.Combine(BuiltinSpecs, name + ".json"))).Str("title", name); } catch (Exception) { }
+                list.Add(new() { ["name"] = name, ["title"] = title, ["kind"] = "spec", ["own"] = false,
+                    ["url"] = Url("app/wallpapers/run.html") + "?spec=" + Uri.EscapeDataString(Url($"app/wallpapers/specs/{name}.json")),
+                    ["spec"] = Url($"app/wallpapers/specs/{name}.json"),
+                    ["thumb"] = File.Exists(Path.Combine(App, $@"wallpapers\thumbnails\{name}.jpg")) ? Url($"app/wallpapers/thumbnails/{name}.jpg") : null });
+            }
         var specs = Directory.GetFiles(Folder, "*.json").Select(Path.GetFileNameWithoutExtension).Where(Valid).OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
         foreach (var name in specs)
         {
@@ -170,6 +184,23 @@ static class Library
             return Import(temp, title ?? Path.GetFileNameWithoutExtension(new Uri(url).AbsolutePath));
         }
         finally { try { File.Delete(temp); } catch (IOException) { } }
+    }
+
+    // The user's own copy of a built-in shader wallpaper, to customize; returns its name.
+    public static string CopyBuiltin(string name)
+    {
+        if (!IsBuiltinSpec(name)) throw new InvalidOperationException("Only built-in shader wallpapers can be copied");
+        var spec = Json.Object(File.ReadAllText(Path.Combine(BuiltinSpecs, name + ".json")));
+        var copy = NewName(name + "-mine");
+        var shader = spec.Str("shader");
+        if (shader != null && shader.EndsWith(".glsl") && !shader.Contains("/"))
+        {
+            File.Copy(Path.Combine(BuiltinSpecs, shader), Path.Combine(Folder, copy + ".glsl"), true);
+            spec["shader"] = copy + ".glsl";
+        }
+        spec["title"] = spec.Str("title", name) + " (mine)";
+        SaveSpec(copy, spec);
+        return copy;
     }
 
     public static void Remove(string name)
