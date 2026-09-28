@@ -10,19 +10,27 @@
   const pointer = {x: .5, y: .5, vx: 0, vy: 0, down: false, inside: false, moved: -1e9, clicks: []};
 
   // ---- Frame pacing. Pages keep calling requestAnimationFrame as usual; callbacks run at `fps`
-  // while the pointer is active, `idleFps` otherwise, and not at all while paused. Waiting on a
-  // timer (instead of skipping vsyncs) means a 120 Hz monitor costs no more than a 60 Hz one.
+  // while the pointer is active, `idleFps` otherwise, and not at all while paused. When idle we wait
+  // on a timer (instead of skipping vsyncs), so a 120 Hz monitor costs no more than a 60 Hz one.
   const nativeRaf = window.requestAnimationFrame.bind(window);
   const callbacks = new Map();
   let nextId = 1, timer = 0, pending = 0, last = 0;
-  const rate = () => performance.now() - pointer.moved < 2000 ? options.fps : options.idleFps;
+  const active = () => performance.now() - pointer.moved < 2000;
+  const rate = () => active() ? options.fps : options.idleFps;
   function flush(now) {
     pending = 0; last = now;
     const run = [...callbacks.values()]; callbacks.clear();
     for (const callback of run) try { callback(now); } catch (error) { reportError(error); }
   }
+  // WebKit dispatches pointer events only at rendering updates, so while the pointer is active we
+  // tick every vsync (callbacks still run at `fps`); on the timer alone most pointermoves are dropped.
+  function tick(now) {
+    pending = 0;
+    if (now - last >= 1000 / rate() - 2) flush(now); else schedule();
+  }
   function schedule() {
     if (timer || pending || options.paused || !callbacks.size) return;
+    if (active()) { pending = nativeRaf(tick); return; }
     const wait = last + 1000 / rate() - performance.now();
     const go = () => { timer = 0; pending = nativeRaf(flush); };
     if (wait > 0) timer = setTimeout(go, wait); else go();
