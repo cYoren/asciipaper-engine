@@ -72,6 +72,8 @@ button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent);
 .drawer-head { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px 12px; position: sticky; top: 0;
   background: var(--panel); z-index: 1; }
 .drawer .row.end { padding: 8px 20px 24px; }
+.drawer .row.share { padding: 16px 20px 0; }
+.drawer .row.share input { flex: 1 1 100%; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line, #333); background: var(--panel-2); color: inherit; font: inherit; }
 .controls { padding: 0 20px; display: grid; gap: 2px; }
 .controls .group { margin: 14px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 

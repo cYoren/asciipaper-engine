@@ -7,7 +7,7 @@
   <project_license>MIT</project_license>
   <description>
     <p>Run animated, interactive ASCII artwork as a live desktop wallpaper. A small native engine draws it on the GPU at a fraction of a web view's power and memory.</p>
-    <p>Port any picture, GIF or video (or a post on X) into an ASCII wallpaper that reacts to the pointer, and tune its characters, colours and effects live. Write your own as a GLSL shader or as HTML, and export them for Wallpaper Engine, Lively Wallpaper and Plash on Windows and macOS.</p>
+    <p>Port any picture, GIF or video (or a post on X) into an ASCII wallpaper that reacts to the pointer, and give any wallpaper one of 38 styles in one click: LEGO bricks, pixel art, voxel cubes, CRT glass, Game Boy, CMYK print, Matrix code. Fine-tune shapes, palettes, dithering and effects live, and share a look as one line of text. Write your own as a GLSL shader or as HTML, and export them for Wallpaper Engine, Lively Wallpaper and Plash on Windows and macOS.</p>
   </description>
   <launchable type="desktop-id">io.github.cyoren.asciipaper.desktop</launchable>
   <url type="homepage">https://github.com/cYoren/asciipaper</url>
@@ -20,6 +20,11 @@
   </developer>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="1.2.0" date="2026-10-06">
+      <description>
+        <p>38 one-click styles (LEGO, pixel art, voxel, LED, CMYK print, Game Boy, CRT, Matrix code, vaporwave and more), with shapes, 21 character sets, 20 palettes, dithering, stackable effects and animated warps. Share a look as one line of text; PNG renders carry it. Big text wallpapers. Export from the Windows app too. A built-in MCP server lets AI agents design wallpapers.</p>
+      </description>
+    </release>
     <release version="1.1.0" date="2026-09-28">
       <description>
         <p>asciipaper for Windows. Seven new built-in wallpapers (donut, tunnel, starfield, fire, ocean, synthwave, plasma), added as plain files. Yin-yang now reacts like liquid. Click effects and the hover lens are off by default. Fixes: customizing a ported wallpaper could blank it; the Studio could draw a second wallpaper on top of the service.</p>

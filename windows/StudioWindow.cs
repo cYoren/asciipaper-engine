@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
@@ -121,6 +122,15 @@ sealed class StudioWindow : Form
                     Filter = "Pictures, GIFs and videos|*.gif;*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.avif;*.mp4;*.webm;*.mov;*.m4v;*.mkv|All files|*.*",
                 })
                     return dialog.ShowDialog(this) == DialogResult.OK ? Library.Import(dialog.FileName) : null;
+            case "exportZip":
+                using (var dialog = new SaveFileDialog
+                {
+                    Title = "Export wallpaper", Filter = "ZIP|*.zip", DefaultExt = "zip",
+                    FileName = Regex.Replace(p.Str("title", "wallpaper"), @"[^A-Za-z0-9 _-]", "").Trim() + ".asciipaper.zip",
+                })
+                    return dialog.ShowDialog(this) == DialogResult.OK
+                        ? Library.ExportZip(dialog.FileName, p.Str("title", "ASCII Wallpaper"), p.Str("html"), p.Str("media"))
+                        : null;
             default: throw new InvalidOperationException($"unknown request: {method}");
         }
     }

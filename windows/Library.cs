@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -45,6 +46,43 @@ static class Library
         Directory.CreateDirectory(Path.Combine(Folder, "lib"));
         File.Copy(Path.Combine(App, @"wallpapers\lib\asciipaper.js"), Path.Combine(Folder, @"lib\asciipaper.js"), true);
         File.WriteAllText(stamp, build);
+    }
+
+    // One ZIP that runs anywhere, like `asciipaper export` on Linux: index.html (made by the Studio), the
+    // runtime, the media it plays, and the files Wallpaper Engine (project.json) and Lively read. Plash on
+    // macOS opens index.html.
+    public static string ExportZip(string file, string title, string html, string media)
+    {
+        if (string.IsNullOrEmpty(html)) throw new InvalidOperationException("Nothing to export");
+        if (File.Exists(file)) File.Delete(file);
+        using var zip = ZipFile.Open(file, ZipArchiveMode.Create);
+        void Text(string entry, string text)
+        {
+            using var writer = new StreamWriter(zip.CreateEntry(entry).Open(), new UTF8Encoding(false));
+            writer.Write(text);
+        }
+        Text("index.html", html);
+        foreach (var lib in Directory.GetFiles(Path.Combine(App, @"wallpapers\lib")))
+            zip.CreateEntryFromFile(lib, "lib/" + Path.GetFileName(lib));
+        if (!string.IsNullOrEmpty(media))
+        {
+            var source = Path.GetFullPath(Path.Combine(Folder, media.Replace('/', '\\')));
+            if (!source.StartsWith(Folder + "\\", StringComparison.OrdinalIgnoreCase) || !File.Exists(source))
+                throw new InvalidOperationException("This wallpaper's picture or video is missing");
+            zip.CreateEntryFromFile(source, media.Replace('\\', '/'));
+        }
+        Text("LivelyInfo.json", Json.Pretty(new Dictionary<string, object> {
+            ["AppVersion"] = "2.0.7.0", ["Title"] = title, ["Desc"] = "Interactive ASCII wallpaper made with asciipaper.",
+            ["Contact"] = "https://github.com/cYoren/asciipaper", ["Type"] = 1, ["FileName"] = "index.html", ["IsAbsolutePath"] = false }));
+        Text("project.json", Json.Pretty(new Dictionary<string, object> {
+            ["file"] = "index.html", ["title"] = title, ["type"] = "web",
+            ["description"] = "Interactive ASCII wallpaper made with asciipaper (https://github.com/cYoren/asciipaper)." }));
+        Text("README.txt", $"{title}: an interactive ASCII wallpaper made with asciipaper.\r\n\r\n" +
+            "Windows, Wallpaper Engine: Create Wallpaper > Open wallpaper > choose project.json.\r\n" +
+            "Windows, Lively Wallpaper: drag this ZIP onto Lively.\r\n" +
+            "macOS, Plash: unzip, then Add Website > the index.html file.\r\n" +
+            "Linux: get asciipaper (https://github.com/cYoren/asciipaper) and run: asciipaper index.html\r\n");
+        return file;
     }
 
     public static bool Valid(string name) => name != null && NameRe.IsMatch(name);

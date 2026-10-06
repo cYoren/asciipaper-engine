@@ -47,7 +47,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 # gtk4-layer-shell must be linked before libwayland; for Python that means preloading it.
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 FLATPAK = os.environ.get("FLATPAK_ID") == "io.github.cyoren.asciipaper"
 PRELOAD = ("/app/lib/libgtk4-layer-shell.so.0" if FLATPAK else
            "/usr/lib/libgtk4-layer-shell.so")
@@ -221,106 +221,14 @@ def copy_local_assets(source, destination_root):
 # ---- Wallpaper specs: JSON that describes a wallpaper (a shader, or media through lib/media.glsl, plus
 # its look). asciipaper-engine runs them natively; spec_html() makes the web version beside them.
 NAME_RE = r"[A-Za-z0-9][A-Za-z0-9 _-]{0,47}"
-CHARSETS = {
-    "classic": " .:-=+*#%@",
-    "detailed": " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
-    "blocks": " ░▒▓█",
-    "braille": " ⠁⠃⠇⡇⣇⣧⣷⣿",
-    "dots": " ·•●",
-    "letters": " .ilLCFTYASMW",
-    "asciify": " .:-=+ASCIIFY#@",
-    "binary": " 01",
-    "standard": " .:;-=+xX80S#@",
-    "ink": " .:~+*?#%$@",
-    "minimal": " ▀▄█",
-    "bars": " ▁▂▃▄▅▆▇█",
-    "quadrants": " ▘▝▞▚▜▟▙▛█",
-    "numeric": " .1723549608",
-    "hacker": " .-+*xX01#@",
-    "alpha": " :rcvwQOKXAHBMW",
-    "mixed": " .,:;ilwxXW#@",
-    "circles": " ·∙○◔◑◕●",
-    "geometric": " ·▽△◇▼▲◼◆█",
-    "math": " ·+÷×ΩΨΔΣ#",
-    "katakana": " ･ｰﾒｹﾏﾃﾎｱﾘｵﾜｻﾆﾓﾅｼｳﾂﾋﾐﾊ",
-}
-
-# ---- Looks: what a spec can say beyond its shader. The engine and lib/asciipaper.js know shapes,
-# dithers and effects by name; palettes are written into the spec as colours.
-SHAPES = ["glyph", "pixel", "mosaic", "dots", "led", "lego", "cross", "diamond", "lines", "diagonal", "voxel", "disco", "cmyk"]
-DITHERS = ["none", "bayer2", "bayer4", "bayer8", "bayer16", "halftone", "radial", "linesH", "linesV", "linesD",
-           "whiteNoise", "blueNoise"]
-DIFFUSION = {"floyd", "atkinson", "stucki", "sierraLite"}   # error diffusion boils on a moving picture: blue noise instead
-EFFECTS = {"vignette": (0, 1), "scanlines": (0, 1), "crt": (0, 1), "rgbSplit": (0, 1), "grain": (0, 1), "glitch": (0, 1),
-           "bloom": (0, 1), "dust": (0, 1), "saturation": (-1, 1), "hue": (-0.5, 0.5), "flicker": (0, 1)}
-WARPS = ["none", "twirl", "spherize", "ripple", "zigzag", "polar", "kaleidoscope", "shear"]
-PALETTES = {
-    "mono": "000000 ffffff", "binary": "000000 ffffff", "grey4": "000000 555555 aaaaaa ffffff",
-    "grey8": "000000 242424 494949 6d6d6d 929292 b6b6b6 dbdbdb ffffff",
-    "gameboy": "0f380f 306230 8bac0f 9bbc0f", "cga0": "000000 55ff55 ff5555 ffff55", "cga1": "000000 55ffff ff55ff ffffff",
-    "pico8": "000000 1d2b53 7e2553 008751 ab5236 5f574f c2c3c7 fff1e8 ff004d ffa300 ffec27 00e436 29adff 83769c ff77a8 ffccaa",
-    "c64": "000000 ffffff 880000 aaffee cc44cc 00cc55 0000aa eeee77 dd8855 664400 ff7777 333333 777777 aaff66 0088ff bbbbbb",
-    "nes16": "000000 fcfcfc bcbcbc 7c7c7c a4e4fc 3cbcfc 0078f8 0000fc b8b8f8 6888fc d800cc f878f8 f83800 f8b800 00b800 58f898",
-    "rgb3": "000000 ff0000 00ff00 0000ff ffff00 ff00ff 00ffff ffffff",
-    "cyberpunk": "0d0221 2e2157 ff2a6d ff6ec7 05d9e8 d1f7ff", "pastel": "77685d ffb347 fdfd96 c1e1c1 aec6cf cbaacb ffd1dc f5f5f5",
-    "riso": "1a1a1a 0078bf ff48b0 00a95c ffe800 f2efe6", "sepia": "2b1d0e 5e4122 8f6a3f c29a64 f0dcb4",
-    "thermal": "000000 2a0a6b 7b1fa2 c0127a ff3d00 ff9100 ffd600 ffffff", "blueprint": "0b2a6f 1f4fa8 6f9be0 dbe8ff",
-    "matrix": "000000 003b00 008f11 00ff41 b6ffc4", "vaporwave": "1b1035 4b1d7a ff71ce 01cdfe 05ffa1 b967ff fffb96",
-    "bonsai": "2e2418 6b4f2a a8794a d9b77e f2e3c0",
-}
-PALETTES = {name: ["#" + c for c in colours.split()] for name, colours in PALETTES.items()}
-GRID = {"aspect": 1, "fill": 0}   # shape looks draw square cells
-# name: (what it is, spec fields). A style resets shape, dither, palette and effects, then sets its own;
-# `uniforms` only matter to ported media (lib/media.glsl).
-STYLES = {
-    "characters": ("Classic ASCII characters", {"shape": "glyph", "charset": "standard", "aspect": 0.55, "cell": 8}),
-    "blocks": ("Shaded block characters", {"shape": "glyph", "charset": "blocks", "aspect": 0.55, "cell": 8}),
-    "braille": ("Fine braille dots", {"shape": "glyph", "charset": "braille", "aspect": 0.55, "cell": 6}),
-    "mixed": ("Letters and symbols", {"shape": "glyph", "charset": "mixed", "aspect": 0.55, "cell": 8}),
-    "binary": ("Ones and zeros", {"shape": "glyph", "charset": "binary", "aspect": 0.55, "cell": 9}),
-    "matrix-code": ("Green katakana rain over the picture, with phosphor glow",
-                    {"shape": "glyph", "charset": "katakana", "aspect": 0.55, "cell": 10, "palette": "matrix",
-                     "background": "#000000", "effects": {"bloom": 0.6, "scanlines": 0.3, "vignette": 0.6}}),
-    "pixel": ("Pixel art", {**GRID, "shape": "pixel", "cell": 8}),
-    "mosaic": ("Square tiles with grout", {**GRID, "shape": "mosaic", "cell": 12}),
-    "lego": ("LEGO bricks, studs and all", {**GRID, "shape": "lego", "cell": 16}),
-    "voxel": ("Lit cubes, sized by brightness", {**GRID, "shape": "voxel", "cell": 14}),
-    "led": ("An LED matrix", {**GRID, "shape": "led", "cell": 10, "background": "#050505", "effects": {"bloom": 0.5}}),
-    "disco": ("Mirror-ball tiles that glint", {**GRID, "shape": "disco", "cell": 14}),
-    "dots": ("Dots sized by brightness", {**GRID, "shape": "dots", "cell": 10}),
-    "halftone": ("Ink dots on paper", {**GRID, "shape": "dots", "cell": 9, "background": "#f2ede4", "palette": ["#1a1a1a"],
-                                       "uniforms": {"invert": 1, "backdrop": 0}}),
-    "cmyk": ("Four-colour print rosettes on paper", {**GRID, "shape": "cmyk", "cell": 10, "background": "#f4efe6"}),
-    "cross": ("Crosses sized by brightness", {**GRID, "shape": "cross", "cell": 12}),
-    "diamond": ("Diamonds sized by brightness", {**GRID, "shape": "diamond", "cell": 12}),
-    "lines": ("Vertical lines", {**GRID, "shape": "lines", "cell": 8}),
-    "diagonal": ("Diagonal hatching", {**GRID, "shape": "diagonal", "cell": 10}),
-    "dither": ("1-bit ordered dither", {**GRID, "shape": "pixel", "cell": 3, "dither": "bayer8", "palette": "mono"}),
-    "gameboy": ("Game Boy greens, Bayer dither", {**GRID, "shape": "pixel", "cell": 5, "dither": "bayer4", "palette": "gameboy"}),
-    "c64": ("Commodore 64 palette, chunky pixels", {**GRID, "shape": "pixel", "cell": 8, "dither": "bayer8", "palette": "c64"}),
-    "pico8": ("PICO-8 palette, Bayer dither", {**GRID, "shape": "pixel", "cell": 6, "dither": "bayer8", "palette": "pico8"}),
-    "nes": ("NES-style palette", {**GRID, "shape": "pixel", "cell": 6, "dither": "bayer4", "palette": "nes16"}),
-    "cga": ("CGA cyan and magenta", {**GRID, "shape": "pixel", "cell": 5, "dither": "bayer4", "palette": "cga1"}),
-    "bonsai": ("Horizontal-line dither in warm vintage tones", {**GRID, "shape": "pixel", "cell": 4, "dither": "linesH", "palette": "bonsai"}),
-    "risograph": ("Riso inks, halftone grain", {**GRID, "shape": "pixel", "cell": 4, "dither": "halftone", "palette": "riso",
-                                               "effects": {"grain": 0.3}}),
-    "thermal": ("A thermal camera", {"shape": "glyph", "charset": "blocks", "aspect": 0.55, "cell": 8, "palette": "thermal"}),
-    "blueprint": ("Cyanotype blues", {"shape": "glyph", "charset": "standard", "aspect": 0.55, "cell": 8, "palette": "blueprint",
-                                      "background": "#08214f"}),
-    "sepia": ("Old photograph", {"shape": "glyph", "charset": "standard", "aspect": 0.55, "cell": 8, "palette": "sepia",
-                                 "effects": {"grain": 0.35, "vignette": 0.7, "dust": 0.4}}),
-    "noir": ("High-contrast black and white film", {"shape": "glyph", "charset": "standard", "aspect": 0.55, "cell": 8,
-                                                    "effects": {"saturation": -1, "grain": 0.5, "dust": 0.5, "vignette": 1}}),
-    "crt": ("An old monitor: curved glass, scanlines, glow", {"effects": {"crt": 0.5, "scanlines": 0.6, "bloom": 0.5,
-                                                                         "rgbSplit": 0.25, "vignette": 0.6, "flicker": 0.3}}),
-    "glitch": ("Torn, shifting signal", {"effects": {"glitch": 0.7, "rgbSplit": 0.6, "grain": 0.2}}),
-    "lofi": ("Washed-out tape", {"effects": {"saturation": -0.4, "rgbSplit": 0.35, "grain": 0.4, "scanlines": 0.3}}),
-    "cyberpunk": ("Neon magenta and cyan, glowing", {"palette": "cyberpunk", "effects": {"bloom": 0.7, "rgbSplit": 0.3}}),
-    "vaporwave": ("Pastel neon tiles, chromatic drift", {**GRID, "shape": "mosaic", "cell": 12, "palette": "vaporwave",
-                                                        "effects": {"rgbSplit": 0.4, "scanlines": 0.4, "bloom": 0.5}}),
-    "neon": ("Saturated, blooming", {"effects": {"bloom": 1, "saturation": 0.6}}),
-    "anaglyph": ("Red and cyan 3D", {"effects": {"rgbSplit": 1}}),
-}
+# ---- Looks: what a spec can say beyond its shader, shared with the Studio on Windows (wallpapers/lib/looks.json).
+# The engine and lib/asciipaper.js know shapes, dithers and effects by name; palettes are written into specs as colours.
+# A style resets shape, dither, palette and effects, then sets its own; its `uniforms` only matter to ported media.
+LOOKS = json.loads((LOCAL / "lib/looks.json").read_text(encoding="utf-8"))
+CHARSETS, SHAPES, DITHERS, WARPS, PALETTES = (LOOKS[k] for k in ("charsets", "shapes", "dithers", "warps", "palettes"))
+DIFFUSION = set(LOOKS["diffusion"])   # error diffusion boils on a moving picture: blue noise instead
+EFFECTS = {k: tuple(v) for k, v in LOOKS["effects"].items()}
+STYLES = {name: (look.pop("about"), look) for name, look in LOOKS["styles"].items()}
 LOOK_KEYS = ("charset", "cell", "aspect", "maxCells", "background", "font", "fill", "weight", "shape", "dither", "palette",
              "effects", "uniforms")
 RECIPE = "asciipaper:v1:"
@@ -336,7 +244,8 @@ def normalize_look(look):
     if "style" in look:
         if look["style"] not in STYLES:
             raise ValueError(f"no style {look['style']!r}; styles: {', '.join(STYLES)}")
-        out = {"_reset": True, "shape": "glyph", "dither": "none", "palette": [], "effects": {}, **STYLES[look.pop("style")][1]}
+        style = look.pop("style")
+        out = {"_reset": True, "style": style, "shape": "glyph", "dither": "none", "palette": [], "effects": {}, **STYLES[style][1]}
     out.update(look)
     if isinstance(out.get("charset"), str) and out["charset"] in CHARSETS:
         out["charset"] = CHARSETS[out["charset"]]
@@ -377,6 +286,13 @@ def apply_look(spec, look):
     (a style or recipe), the rest replaces. Empty keys are dropped."""
     look = dict(look)
     reset = look.pop("_reset", False)
+    before = STYLES.get(spec.get("style"), ("", {}))[1] if reset else {}
+    for key in set(before.get("uniforms", {})) - set(look.get("uniforms", {})):   # undo what the last style set
+        spec.get("uniforms", {}).pop(key, None)
+    if "background" in before and "background" not in look:
+        spec["background"] = "#080909"
+    if reset and "style" not in look:
+        spec.pop("style", None)
     for key, value in look.items():
         if key == "uniforms" or (key == "effects" and not reset):
             spec[key] = {**spec.get(key, {}), **value}
@@ -1325,7 +1241,6 @@ def run(target, studio=False, preview=False):
                 toast(f"Customizing your copy: {name}")
             spec = look_state["spec"]
             if key == "style":
-                look_state["style"] = value
                 if value is None:
                     return
                 apply_look(spec, normalize_look({"style": value}))
@@ -1345,7 +1260,7 @@ def run(target, studio=False, preview=False):
             if key.startswith("effects."):
                 return spec.get("effects", {}).get(key[8:], fallback)
             if key == "style":
-                return look_state.get("style")
+                return spec.get("style")
             return spec.get(key, fallback)
 
         def slider_row(title, key, low, high, step, fallback, subtitle=None, media=True):
@@ -1438,7 +1353,7 @@ def run(target, studio=False, preview=False):
             except (OSError, SystemExit):
                 defaults = {}
             media = bool(spec.get("media"))
-            look_state.update(path=path, spec=spec, defaults=defaults, loading=True, builtin=is_builtin_spec(path), style=None)
+            look_state.update(path=path, spec=spec, defaults=defaults, loading=True, builtin=is_builtin_spec(path))
             for row, media_only, load in look_rows:
                 row.set_visible(media or not media_only)
                 load()
@@ -1515,10 +1430,16 @@ def run(target, studio=False, preview=False):
                                    subtitle="One ZIP for Wallpaper Engine, Lively Wallpaper or Plash", activatable=True)
         export_row.add_suffix(Gtk.Image(icon_name="document-save-symbolic"))
         share.add(export_row)
-        video_row = Adw.ActionRow(title="Save as a video or GIF", activatable=True,
-                                  subtitle="For video wallpapers (GNOME, phones) or to share. Not for HTML wallpapers")
+        video_row = Adw.ActionRow(title="Save as a picture, video or GIF", activatable=True,
+                                  subtitle="A 4K PNG (it carries its look), or a video for GNOME, phones and sharing")
         video_row.add_suffix(Gtk.Image(icon_name="camera-video-symbolic"))
         share.add(video_row)
+        recipe_row = Adw.ActionRow(title="Copy look code", activatable=True,
+                                   subtitle="One line that recreates this look anywhere; paste it below, or share it")
+        recipe_row.add_suffix(Gtk.Image(icon_name="edit-copy-symbolic"))
+        share.add(recipe_row)
+        paste_row = Adw.EntryRow(title="Paste a look code (or a style name) and press Enter", show_apply_button=True)
+        share.add(paste_row)
         edit_row = Adw.ActionRow(title="Open in your editor", subtitle="Wallpapers you made or ported", activatable=True)
         edit_row.add_suffix(Gtk.Image(icon_name="document-edit-symbolic"))
         share.add(edit_row)
@@ -1565,13 +1486,38 @@ def run(target, studio=False, preview=False):
                 toast("Rendering… this takes a little while")
                 def work():
                     try:
-                        message = f"Saved {render_video(name, target).name}"
+                        saved = render_png(name, target) if target.lower().endswith(".png") else render_video(name, target)
+                        message = f"Saved {saved.name}"
                     except SystemExit as error:
                         message = str(error.code)
+                    except (ValueError, subprocess.TimeoutExpired) as error:
+                        message = f"Could not save: {error}"
                     GLib.idle_add(lambda: toast(message) and False)
                 threading.Thread(target=work, daemon=True).start()
             dialog.save(win, None, done)
         video_row.connect("activated", video_selected)
+
+        def copy_recipe(*_):
+            path = spec_file(selected_name())
+            if not path:
+                toast("Look codes come from built-in, ported and shader wallpapers")
+                return
+            win.get_clipboard().set(encode_recipe(read_spec(path), path.parent))
+            toast("Look code copied")
+        recipe_row.connect("activated", copy_recipe)
+
+        def paste_recipe(row):
+            try:
+                name = restyle(selected_name(), recipe_look(row.get_text().strip()))
+            except ValueError as error:
+                toast(str(error))
+                return
+            row.set_text("")
+            if name != selected_name():
+                set_target(name); refresh_gallery(select=name)
+            show_wallpaper(app); load_look()
+            toast(f"Applied to {name}")
+        paste_row.connect("apply", paste_recipe)
 
         def edit_selected(*_):
             path = user_file(selected_name())

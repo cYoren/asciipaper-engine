@@ -1,22 +1,30 @@
 # asciipaper
 
-Live **ASCII wallpapers** for Windows and Linux. Pick one and click Apply, or turn any picture, GIF or video (even a post on X) into ASCII art that moves on your desktop. Write your own as a single GLSL function.
+Live, interactive **ASCII wallpapers** for Windows, Linux and macOS. One click turns any wallpaper into one of **38 styles**: LEGO bricks, pixel art, voxel cubes, CRT glass, Game Boy, CMYK print, Matrix code and more. Port any picture, GIF, video or post on X into ASCII art that moves on your desktop, or ask Claude to design a new one for you. Free, open source, and light on your GPU.
 
-**[⬇ Download for Windows 10 and 11](https://github.com/cYoren/asciipaper/releases/latest)** (`asciipaper-setup-….exe`) · Linux: [below](#install)
+**[⬇ Download for Windows 10 and 11](https://github.com/cYoren/asciipaper/releases/latest)** · Linux: `yay -S asciipaper` ([more](#install)) · macOS: [with Plash](#install)
+
+![One wallpaper through eight styles: characters, LEGO, vaporwave, CRT, Game Boy, CMYK, LED and glitch](assets/styles.gif)
 
 ![asciipaper running the Fluid wallpaper on the Omarchy desktop](assets/demo.gif)
+
+![Twelve styles: LEGO, CMYK, Game Boy, CRT, Matrix code, voxel, LED, vaporwave, halftone, PICO-8, glitch and braille](assets/styles.jpg)
 
 ![Built-in wallpapers: fluid, donut, synthwave, tunnel, fire, yin-yang, ocean, matrix, starfield, plasma, flow, and a ported video](assets/gallery.jpg)
 
 - **Light.** A small native engine (C, OpenGL ES) draws on the GPU: under 1% of a CPU core and about 100 MB on Linux. Wallpapers stop drawing behind fullscreen and maximized windows, and while the PC is locked.
 - **Calm by default.** Wallpapers react to the pointer like liquid (fluid, yin-yang) and never chase it. Click ripples and the hover lens are there if you want them (Settings, Customize).
 - **Port anything.** Pictures, GIFs, videos, links, and posts on X or Twitter. asciipaper measures the media and picks a starting look: levels, colours, and which parts get the dense characters.
-- **Customizable, live.** Characters, size, weight, glow, colours, contrast, fit, backdrop and effects all change on your desktop as you move the sliders.
+- **38 styles, live.** Pick a style, then fine-tune shapes, 21 character sets, 20 retro palettes, dithering, CRT, bloom, glitch, grain and warps. Everything changes on your desktop as you move the sliders.
+- **Share a look in one line.** Every look is a short recipe code, and every PNG you render carries its own, so a screenshot you post *is* the wallpaper.
+- **Your AI can make them.** A built-in MCP server lets Claude, Cursor or any MCP client write wallpapers, see each attempt and set the one you like.
 - **Windows and Linux.** A Windows app with an installer (behind your desktop icons, every monitor, tray icon, starts with Windows). On Linux, Wayland desktops with layer-shell (Hyprland, KDE Plasma, Sway, niri, COSMIC, river, Wayfire, labwc). Exports for Wallpaper Engine, Lively and Plash (macOS); videos and GIFs for everything else.
 
 ## Install
 
 **Windows 10 and 11**: download `asciipaper-setup-….exe` from [Releases](https://github.com/cYoren/asciipaper/releases/latest) and run it. No administrator rights and nothing else to install (it uses .NET Framework and WebView2, which come with Windows). The installer isn't code-signed yet, so Windows may say it "protected your PC": choose **More info → Run anyway**. asciipaper then lives in the tray and starts with Windows.
+
+**macOS**: make or pick a wallpaper on Linux or Windows (or grab one people share), export it (`asciipaper export NAME`, or **Export** in the Studio), unzip, and open `index.html` in the free [Plash](https://sindresorhus.com/plash) app: it stays live and interactive. Prefer a plain video wallpaper? `asciipaper render NAME wallpaper.mp4`.
 
 **Arch Linux** (AUR):
 
