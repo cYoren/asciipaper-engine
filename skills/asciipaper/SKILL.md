@@ -19,6 +19,18 @@ asciipaper --studio                   # GUI: gallery, live Look settings, portin
 
 If the `asciipaper` MCP tools are connected (`asciipaper mcp`), prefer them: `write_wallpaper` returns a snapshot of the result (or the shader error), so iterate until it looks right, then `set_wallpaper`.
 
+## Restyle any shader or ported wallpaper
+
+```sh
+asciipaper styles                                  # the full catalogue
+asciipaper look NAME STYLE [key=value …]           # e.g. look rain lego effects.crt=0.5 warp=twirl palette=gameboy
+asciipaper recipe NAME                             # the look as one asciipaper:v1: line; look/import take it back
+asciipaper render NAME shot.png --size 3840x2160   # a still that carries its recipe
+asciipaper text "HELLO" [name]                     # big text as a wallpaper
+```
+
+Spec keys for a look (engine and web): `shape` (glyph pixel mosaic dots led lego cross diamond lines diagonal voxel disco cmyk), `dither` (none bayer2 bayer4 bayer8 bayer16 halftone radial linesH linesV linesD whiteNoise blueNoise), `palette` (up to 16 `"#rrggbb"`; `asciipaper look` also takes names), `effects` (`{"vignette", "scanlines", "crt", "rgbSplit", "grain", "glitch", "bloom", "dust", "flicker": 0..1, "saturation": -1..1, "hue": -0.5..0.5}`). Ported media also takes `uniforms.warp` (0 none, 1 twirl, 2 spherize, 3 ripple, 4 zigzag, 5 polar, 6 kaleidoscope, 7 shear) and `uniforms.warpAmount`. Shape looks want `"aspect": 1`.
+
 ## Port a picture, GIF or video
 
 ```sh

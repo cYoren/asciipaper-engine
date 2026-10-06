@@ -8,6 +8,7 @@
 - Port media: `asciipaper import <file|URL|x.com post> [name]` → a JSON spec wallpaper; edit its uniforms live.
 - Write a wallpaper: `asciipaper create NAME` → NAME.glsl with `vec4 cell(vec2 uv)` returning (r, g, b, level); uniforms u_time u_grid u_size u_aspect u_pointer u_velocity u_down u_idle u_strength u_clicks[8]. Or HTML with ./lib/asciipaper.js. See skills/asciipaper/SKILL.md.
 - Share: `asciipaper export NAME` (Windows/macOS ZIP), `asciipaper render NAME out.mp4|gif`.
+- Restyle: `asciipaper look NAME STYLE [key=value…]` (38 styles: LEGO, pixel, voxel, CMYK, Game Boy, CRT, glitch…; shapes, palettes, dithers, post effects, warps); `asciipaper styles` lists them. Share a look: `asciipaper recipe NAME` → asciipaper:v1: code; PNG renders carry it.
 - MCP server: `asciipaper mcp` (stdio). Claude Code: `claude mcp add --scope user asciipaper -- asciipaper mcp`. Agents write a shader, get a snapshot back, then set it.
 - Agent skill: `npx skills add cYoren/asciipaper`
 - Bundled: offline port of asciify.org Fluid (asciify-engine, MIT).

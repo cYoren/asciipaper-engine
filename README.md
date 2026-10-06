@@ -49,7 +49,28 @@ asciipaper import https://x.com/…/status/…   # …or a link, or a post on X
 asciipaper create aurora               # start your own shader wallpaper
 asciipaper export aurora               # ZIP for Windows and macOS
 asciipaper render aurora aurora.mp4    # record a video or GIF
+asciipaper render aurora aurora.png --size 7680x4320   # or an 8K still
 ```
+
+## Styles, effects and recipes
+
+Any shader or ported wallpaper takes a whole new look in one command (or from the Studio's Style menu):
+
+```sh
+asciipaper styles                      # every look, shape, palette, dither, effect and warp
+asciipaper look rain lego              # LEGO bricks; also pixel, mosaic, voxel, led, disco, dots, halftone, cmyk…
+asciipaper look rain gameboy effects.crt=0.5 warp=kaleidoscope
+asciipaper look donut palette=pico8 dither=bayer8 shape=pixel
+asciipaper text "HELLO"                # big text as a wallpaper; style it like any other
+```
+
+- **38 styles**: character looks (classic, blocks, braille, katakana Matrix code…), grid looks (pixel art, mosaic, LEGO, voxel cubes, LED matrix, disco tiles, halftone and CMYK print, crosses, diamonds, lines, hatching), retro palettes (Game Boy, C64, PICO-8, NES, CGA), print (risograph, cyanotype, sepia, noir) and signal looks (CRT, glitch, lofi, cyberpunk, vaporwave, neon, anaglyph).
+- **Shapes** draw each cell as a crisp vector shape instead of a glyph, at any size.
+- **21 character ramps**, **20 palettes** (or your own up to 16 colours) and **11 ordered dithers** (Bayer 2 to 16, halftone, radial, line and noise patterns), stable on moving pictures. Error-diffusion names (floyd, atkinson…) map to blue noise, because diffusion boils when the picture moves.
+- **Post effects** you can stack: vignette, scanlines, CRT curvature, RGB split, bloom, film grain, glitch, dust, flicker, saturation and hue.
+- **Warps** for ported media, all slowly animated: twirl, spherize/pinch, ripple, zigzag, polar, kaleidoscope, shear.
+
+A look travels as one line: `asciipaper recipe NAME` prints an `asciipaper:v1:` code (a shader wallpaper's code rides along). `asciipaper look NAME CODE` applies a look and `asciipaper import CODE` rebuilds a shared shader wallpaper. Every PNG from `asciipaper render` carries its recipe, so a screenshot you post is also the wallpaper: `asciipaper import shot.png` or `asciipaper look NAME shot.png`.
 
 ## Let your AI agent design wallpapers
 
@@ -59,7 +80,7 @@ asciipaper is also an MCP server. Hook it up and ask Claude, Cursor or any MCP c
 claude mcp add --scope user asciipaper -- asciipaper mcp        # Claude Code
 ```
 
-Anywhere else, add a stdio server with the command `asciipaper mcp`. Tools: `list_wallpapers`, `get_wallpaper`, `write_wallpaper`, `snapshot`, `set_wallpaper`, `import_media`, `render`.
+Anywhere else, add a stdio server with the command `asciipaper mcp`. Tools: `list_wallpapers`, `list_styles`, `get_wallpaper`, `write_wallpaper` (shaders, styles, any look field, recipes), `snapshot`, `set_wallpaper`, `import_media`, `text_wallpaper`, `encode_recipe`, `decode_recipe`, `render`. Everything runs on your machine: no account, no upload, no cost per render.
 
 ## Port anything
 

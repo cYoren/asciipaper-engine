@@ -92,18 +92,80 @@ uniform vec3 u_clicks[8];
 uniform sampler2D u_data;
 `;
   const QUAD = 'attribute vec2 p;varying vec2 v_uv;void main(){v_uv=p;gl_Position=vec4(p*2.0-1.0,0,1);}';
+  // Pass 1 also applies the look's `dither` (an ordered pattern over the cells) and `palette` (nearest colour).
   const CELL_MAIN = `
-uniform sampler2D u_lut;uniform float u_glyphs,u_useLut;
-void main(){vec4 c=cell(vec2(v_uv.x,1.0-v_uv.y));float l=clamp(c.a,0.0,1.0);
+uniform sampler2D u_lut;uniform float u_glyphs,u_useLut,u_dither,u_paletteSize;uniform vec3 u_palette[16];
+float ap_b2(vec2 a){a=floor(a);return fract(a.x*0.5+a.y*a.y*0.75);}
+float ap_b4(vec2 a){return ap_b2(0.5*a)*0.25+ap_b2(a);}
+float ap_b8(vec2 a){return ap_b4(0.5*a)*0.25+ap_b2(a);}
+float ap_dither(vec2 a){float m=u_dither;
+if(m<1.5)return ap_b2(a);if(m<2.5)return ap_b4(a);if(m<3.5)return ap_b8(a);if(m<4.5)return ap_b8(0.5*a)*0.25+ap_b2(a);
+if(m<5.5)return clamp(length(fract(a/4.0)-0.5)*1.41,0.0,1.0);if(m<6.5)return fract(length(a-u_grid*0.5)/4.0);
+if(m<7.5)return fract(a.y/4.0);if(m<8.5)return fract(a.x/4.0);if(m<9.5)return fract((a.x+a.y)/4.0);
+if(m<10.5)return fract(sin(dot(floor(a),vec2(12.9898,78.233)))*43758.5453);
+return fract(52.9829189*fract(dot(floor(a),vec2(0.06711056,0.00583715))));}
+void main(){vec4 c=cell(vec2(v_uv.x,1.0-v_uv.y));float l=clamp(c.a,0.0,1.0);vec3 rgb=clamp(c.rgb,0.0,1.0);
+if(u_dither>0.5){float t=ap_dither(gl_FragCoord.xy)-0.5;if(l>0.0)l=clamp(l+t/max(u_glyphs-1.0,1.0),0.0,1.0);
+if(u_paletteSize>0.5)rgb=clamp(rgb+t*pow(max(u_paletteSize-1.0,1.0),-0.333),0.0,1.0);}
+if(u_paletteSize>0.5){vec3 best=u_palette[0];float bd=1e9;for(int i=0;i<16;i++){if(float(i)>=u_paletteSize)break;
+vec3 e=rgb-u_palette[i];float d=dot(e*e,vec3(0.3,0.59,0.11));if(d<bd){bd=d;best=u_palette[i];}}rgb=best;}
 float g=u_useLut>0.5?texture2D(u_lut,vec2((floor(l*255.0+0.5)+0.5)/256.0,0.5)).a*255.0:floor(l*(u_glyphs-1.0)+0.5);
-gl_FragColor=vec4(g/255.0,clamp(c.rgb,0.0,1.0));}`;
-  // `fill` (0..1) lays each glyph's colour faintly behind it, scaled by its density, so pictures read through the gaps.
-  const GLYPHS = `precision highp float;varying vec2 v_uv;uniform sampler2D cells,atlas;uniform vec2 grid,cell,atlasSize;uniform float tile,pad,fill,glyphs;uniform vec3 bg;
-void main(){vec4 d=texture2D(cells,(floor(v_uv*grid)+0.5)/grid);vec2 l=fract(vec2(v_uv.x,1.0-v_uv.y)*grid);float g=floor(d.r*255.0+0.5);
-vec2 uv=(vec2(g*tile,0.0)+pad+l*cell)/atlasSize;vec3 under=bg+d.gba*fill*g/max(glyphs-1.0,1.0);
-gl_FragColor=vec4(mix(under,d.gba,texture2D(atlas,uv).a),1.0);}`;
+gl_FragColor=vec4(g/255.0,rgb);}`;
+  // Pass 2: `fill` (0..1) lays each glyph's colour faintly behind it, scaled by its density, so pictures read
+  // through the gaps; `shape` draws pixels, tiles, dots, LEGO… instead of glyphs; fxA/B/C are the post effects.
+  const GLYPHS = `precision highp float;varying vec2 v_uv;uniform sampler2D cells,atlas;uniform vec2 grid,cell,atlasSize;uniform float tile,pad,fill,glyphs,shape,time;uniform vec3 bg;uniform vec4 fxA,fxB,fxC;
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+vec4 at(vec2 p){return texture2D(cells,(floor(p*grid)+0.5)/grid);}
+float inside(float d){return clamp(0.5-d,0.0,1.0);}
+float box(vec2 q,vec2 h){vec2 d=abs(q)-h;return length(max(d,0.0))+min(max(d.x,d.y),0.0);}
+vec3 cmyk(vec2 px){vec3 col=bg;vec4 ang=vec4(0.26,1.31,0.0,0.79);float s=min(cell.x,cell.y)*0.9;
+for(int k=0;k<4;k++){float a=ang[k];mat2 r=mat2(cos(a),-sin(a),sin(a),cos(a));vec2 q=r*px,c=(floor(q/s)+0.5)*s;
+vec3 rgb=at((c*r)/(grid*cell)).gba;float K=1.0-max(max(rgb.r,rgb.g),rgb.b);vec4 ink=vec4((1.0-rgb-K)/max(1.0-K,0.001),K);
+float dot_=inside(length(q-c)-s*0.55*sqrt(ink[k]));
+vec3 tone=k==0?vec3(0.0,0.68,0.94):k==1?vec3(0.93,0.0,0.55):k==2?vec3(1.0,0.95,0.0):vec3(0.1);col*=mix(vec3(1.0),tone,dot_);}
+return col;}
+vec3 draw(vec2 p){vec4 d=at(p);vec2 l=fract(vec2(p.x,1.0-p.y)*grid);float g=floor(d.r*255.0+0.5),v=g/max(glyphs-1.0,1.0),s=floor(shape+0.5);
+vec3 under=bg+d.gba*fill*v,c=d.gba;
+if(s<0.5){vec2 uv=(vec2(g*tile,0.0)+pad+l*cell)/atlasSize;return mix(under,c,texture2D(atlas,uv).a);}
+if(s>11.5)return cmyk(p*grid*cell);
+vec2 q=(l-0.5)*cell;float r=min(cell.x,cell.y)*0.5,gap=max(1.0,r*0.12),k=0.0;
+if(g<0.5&&s!=4.0)return under;
+if(s<1.5)return c;
+if(s<2.5||s>10.5){k=inside(box(q,cell*0.5-gap));
+if(s>10.5){vec2 id=floor(p*grid);c+=pow(max(0.0,sin(time*2.0+hash(id)*6.283)),24.0)*inside(length(q+r*0.35)-r*0.25)*0.9;}}
+else if(s<3.5)k=inside(length(q)-r*1.15*sqrt(v));
+else if(s<4.5){k=inside(length(q)-r*0.78);c=max(c*(0.12+0.88*v),vec3(0.05));}
+else if(s<5.5){k=inside(box(q,cell*0.5-gap*0.6));float st=length(q)-r*0.5;
+c*=(1.0-0.35*inside(abs(st)-gap*0.5))*(1.0+0.3*inside(st)*clamp(-(q.x+q.y)/r,0.0,1.0));}
+else if(s<6.5){float a=r*v*1.1,t=max(1.0,r*0.28);k=inside(min(box(q,vec2(a,t)),box(q,vec2(t,a))));}
+else if(s<7.5)k=inside((abs(q.x)+abs(q.y)-r*1.3*v)*0.707);
+else if(s<8.5)k=inside(abs(q.x)-cell.x*0.5*v);
+else if(s<9.5)k=inside(abs(q.x+q.y)*0.707-r*0.75*v);
+else{float h=r*(0.35+0.6*v);k=inside(box(q,vec2(h)));c*=q.y<-h*0.35?1.25:q.x>h*0.35?0.62:1.0;}
+return mix(under,c,k);}
+void main(){vec2 p=v_uv;
+if(fxA.z>0.0){vec2 o=p-0.5;p=0.5+o*(1.0+fxA.z*0.35*dot(o,o)*4.0);if(p.x<0.0||p.x>1.0||p.y<0.0||p.y>1.0){gl_FragColor=vec4(0.0,0.0,0.0,1.0);return;}}
+if(fxB.y>0.0){float t=floor(time*9.0),band=floor(p.y*18.0+hash(vec2(t,3.0))*6.0);if(hash(vec2(band,t))<fxB.y*0.35)p.x=fract(p.x+(hash(vec2(t,band))-0.5)*0.12*fxB.y);}
+vec3 col=draw(p);
+if(fxA.w>0.0){float o=fxA.w*6.0/(grid.x*cell.x);col.r=draw(p+vec2(o,0.0)).r;col.b=draw(p-vec2(o,0.0)).b;}
+if(fxB.z>0.0){vec3 b=vec3(0.0);for(int i=-1;i<=1;i++)for(int j=-1;j<=1;j++){vec4 e=texture2D(cells,(floor(p*grid)+vec2(float(i),float(j))+0.5)/grid);
+b+=e.gba*min(e.r*255.0,1.0)/(1.0+float(i*i+j*j));}col+=b*fxB.z*0.22;}
+if(fxC.x!=0.0){float y=dot(col,vec3(0.299,0.587,0.114));col=mix(vec3(y),col,1.0+fxC.x);}
+if(fxC.y!=0.0){float a=fxC.y*6.283;vec3 k=vec3(0.57735);col=col*cos(a)+cross(k,col)*sin(a)+k*dot(k,col)*(1.0-cos(a));}
+if(fxA.y>0.0)col*=1.0-fxA.y*0.55*(0.5+0.5*cos(gl_FragCoord.y*2.094));
+if(fxA.x>0.0)col*=1.0-fxA.x*smoothstep(0.35,1.0,length(v_uv-0.5)*1.41);
+if(fxB.x>0.0)col+=(hash(gl_FragCoord.xy+fract(time*7.0)*91.0)-0.5)*fxB.x*0.35;
+if(fxB.w>0.0)col=mix(col,vec3(0.82),step(1.0-fxB.w*0.004,hash(floor(gl_FragCoord.xy/2.0)+floor(time*12.0)*7.31)));
+if(fxC.z>0.0)col*=1.0-fxC.z*0.12*hash(vec2(floor(time*20.0),5.0));
+gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
   const CPU_CELL = 'vec4 cell(vec2 uv){return texture2D(u_data,uv);}';
   const PAD = 3;
+  // Look names, by index: the same tables as native/spec.c. A config may also give the index.
+  const SHAPES = ['glyph', 'pixel', 'mosaic', 'dots', 'led', 'lego', 'cross', 'diamond', 'lines', 'diagonal', 'voxel', 'disco', 'cmyk'];
+  const DITHERS = ['none', 'bayer2', 'bayer4', 'bayer8', 'bayer16', 'halftone', 'radial', 'linesH', 'linesV', 'linesD', 'whiteNoise', 'blueNoise'];
+  const FX = ['vignette', 'scanlines', 'crt', 'rgbSplit', 'grain', 'glitch', 'bloom', 'dust', 'saturation', 'hue', 'flicker', ''];
+  const named = (v, names) => typeof v === 'number' ? v : Math.max(0, names.indexOf(v));
+  const rgb = v => (v.match(/[0-9a-f]{2}/gi) || ['00', '00', '00']).map(h => parseInt(h, 16) / 255);
 
   function ascii(config = {}) {
     const cfg = Object.assign({charset: ' .:-=+*#%@', cell: 8, aspect: .6, maxCells: 40000, background: '#080909',
@@ -138,7 +200,13 @@ gl_FragColor=vec4(mix(under,d.gba,texture2D(atlas,uv).a),1.0);}`;
     gl.useProgram(glyphProg);
     gl.uniform1i(glyphProg.u('cells'), 0); gl.uniform1i(glyphProg.u('atlas'), 1); gl.uniform3fv(glyphProg.u('bg'), bg);
     gl.uniform1f(glyphProg.u('fill'), cfg.fill); gl.uniform1f(glyphProg.u('glyphs'), chars.length);
+    gl.uniform1f(glyphProg.u('shape'), named(cfg.shape || 0, SHAPES));
+    const fx = FX.map(k => Number(cfg.effects?.[k]) || 0);
+    ['fxA', 'fxB', 'fxC'].forEach((k, i) => gl.uniform4fv(glyphProg.u(k), fx.slice(i * 4, i * 4 + 4)));
     gl.useProgram(cellProg);
+    const palette = (cfg.palette || []).slice(0, 16).map(rgb);
+    gl.uniform1f(cellProg.u('u_dither'), named(cfg.dither || 0, DITHERS)); gl.uniform1f(cellProg.u('u_paletteSize'), palette.length);
+    if (palette.length) gl.uniform3fv(cellProg.u('u_palette'), palette.flat());
     gl.uniform1i(cellProg.u('u_data'), 2); gl.uniform1i(cellProg.u('u_lut'), 3);
     gl.uniform1f(cellProg.u('u_glyphs'), chars.length); gl.uniform1f(cellProg.u('u_useLut'), cfg.lut ? 1 : 0);
     if (cfg.lut) {   // lut[i] = glyph index for level i/255, for exact brightness ramps
@@ -220,7 +288,7 @@ gl_FragColor=vec4(mix(under,d.gba,texture2D(atlas,uv).a),1.0);}`;
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.viewport(0, 0, scene.cols, scene.rows); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, canvas.width, canvas.height);
-      gl.useProgram(glyphProg); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.useProgram(glyphProg); gl.uniform1f(glyphProg.u('time'), scene.time); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
     requestAnimationFrame(frame);
     return scene;
@@ -230,7 +298,7 @@ gl_FragColor=vec4(mix(under,d.gba,texture2D(atlas,uv).a),1.0);}`;
   // shader inlined). The media, if any, is the page's #asciipaper-media <img> or <video>; each
   // frame is drawn small and handed to the shader as `media`, like asciipaper-engine does.
   const color = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? [1, 3, 5].map(i => parseInt(v.slice(i, i + 2), 16) / 255) : v;
-  const LOOK = ['charset', 'cell', 'aspect', 'maxCells', 'background', 'font', 'time', 'period', 'fill', 'weight'];
+  const LOOK = ['charset', 'cell', 'aspect', 'maxCells', 'background', 'font', 'time', 'period', 'fill', 'weight', 'shape', 'dither', 'palette', 'effects'];
   let live = null;   // the running spec: {uniforms, look} for patch()
 
   function spec(s) {

@@ -1,4 +1,4 @@
-// defaults: {"fit": 0, "zoom": 1, "offset": [0, 0], "contrast": 1.15, "brightness": 0, "gamma": 1, "threshold": 0.06, "invert": 0, "colorMode": 0, "vivid": 0.5, "tint": "#e8b900", "tint2": "#ff3355", "lens": 0, "ripple": 1, "speed": 1, "backdrop": 0.3}
+// defaults: {"fit": 0, "zoom": 1, "offset": [0, 0], "contrast": 1.15, "brightness": 0, "gamma": 1, "threshold": 0.06, "invert": 0, "colorMode": 0, "vivid": 0.5, "tint": "#e8b900", "tint2": "#ff3355", "lens": 0, "ripple": 1, "speed": 1, "backdrop": 0.3, "warp": 0, "warpAmount": 0.5}
 // The media shader: turns a picture, GIF or video into characters. Every uniform below is a setting a
 // wallpaper can change in its "uniforms" (colours as "#rrggbb"); the line above holds the defaults.
 // asciipaper sets `media` (the current frame) and `mediaSize` (its size in pixels).
@@ -16,8 +16,25 @@ uniform vec3 tint, tint2;
 uniform float lens;         // magnify around the pointer
 uniform float ripple;       // clicks send a wave through the picture
 uniform float backdrop;     // 0..1: fill the rest of the screen with a dim, enlarged copy of the picture
+uniform float warp;         // 0 none, 1 twirl, 2 spherize (pinch below 0), 3 ripple, 4 zigzag, 5 polar, 6 kaleidoscope, 7 shear
+uniform float warpAmount;   // how strong; every warp moves slowly with time
+
+vec2 warped(vec2 uv){
+  if(warp<0.5) return uv;
+  vec2 k=vec2(u_aspect,1.0), c=(uv-0.5)*k;
+  float r=length(c), a=atan(c.y,c.x), t=u_time, w=warpAmount;
+  if(warp<1.5) a+=w*4.0*max(0.0,1.0-r*1.8)*sin(t*0.3);
+  else if(warp<2.5) r*=pow(clamp(r*1.8,0.001,1.0),w*(0.7+0.3*sin(t*0.5)));
+  else if(warp<3.5) r+=sin(r*40.0-t*3.0)*0.012*w;
+  else if(warp<4.5){c.x+=sin(c.y*30.0+t*2.0)*0.02*w; return c/k+0.5;}
+  else if(warp<5.5) return vec2(fract(a/6.283+0.5+t*0.01),clamp(r*1.6/(0.4+w),0.0,1.0));
+  else if(warp<6.5){float n=floor(3.0+w*6.0), s=6.283/n; a=abs(mod(a+t*0.1,s)-s*0.5);}
+  else {c.x+=c.y*w*sin(t*0.4); return c/k+0.5;}
+  return vec2(cos(a),sin(a))*r/k+0.5;
+}
 
 vec4 cell(vec2 uv){
+  uv=warped(uv);
   vec2 q=uv-u_pointer, k=vec2(u_aspect,1.0);
   float d=length(q*k), glow=0.0;
   // Hover: a magnifying lens that follows the pointer while it moves.

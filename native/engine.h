@@ -25,6 +25,10 @@ struct preset {
     float fill;                                             // 0..1: each glyph's colour, faintly, behind it
     int weight;                                             // font weight, 100..900 (0 = regular)
     const uint8_t *lut;                                     // 256 glyph indices, or NULL
+    float shape, dither;                                    // indices into SHAPES / DITHERS (spec.c)
+    int npalette;                                           // 0 = the shader's own colours
+    float palette[16 * 3];
+    float fx[12];                                           // post effects, in FX order (spec.c)
     void (*resize)(struct scene *);
     void (*update)(struct scene *, float dt);
     void (*pointer_move)(struct scene *);

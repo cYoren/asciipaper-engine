@@ -73,6 +73,21 @@ static void set_uniforms(struct spec *s, const struct json *object) {
     }
 }
 
+// Look names, by index: the same tables as lib/asciipaper.js. A spec may also give the index.
+static const char *const SHAPES[] = {"glyph", "pixel", "mosaic", "dots", "led", "lego", "cross", "diamond", "lines",
+                                     "diagonal", "voxel", "disco", "cmyk", NULL};
+static const char *const DITHERS[] = {"none", "bayer2", "bayer4", "bayer8", "bayer16", "halftone", "radial", "linesH",
+                                      "linesV", "linesD", "whiteNoise", "blueNoise", NULL};
+static const char *const FX[] = {"vignette", "scanlines", "crt", "rgbSplit", "grain", "glitch", "bloom", "dust",
+                                 "saturation", "hue", "flicker", NULL};
+
+static float named(const struct json *j, const char *key, const char *const *names) {
+    const struct json *v = json_get(j, key);
+    if (v && v->type == JSON_NUMBER) return v->number;
+    for (int i = 0; v && v->type == JSON_STRING && names[i]; i++) if (!strcmp(names[i], v->string)) return i;
+    return 0;
+}
+
 static float uniform(const struct spec *s, const char *name, float fallback) {
     for (int k = 0; k < s->nuniforms; k++) if (!strcmp(s->uniforms[k].name, name)) return s->uniforms[k].v[0];
     return fallback;
@@ -166,6 +181,17 @@ const struct preset *spec_load(const char *path, const char *lib, char *shader_f
         .fill = fmin(1, fmax(0, json_number(j, "fill", 0))),
         .weight = fmin(900, fmax(0, json_number(j, "weight", 0))),
     };
+    s->preset.shape = named(j, "shape", SHAPES);
+    s->preset.dither = named(j, "dither", DITHERS);
+    const struct json *palette = json_get(j, "palette");
+    for (int i = 0; palette && palette->type == JSON_ARRAY && i < palette->count && s->preset.npalette < 16; i++)
+        if (palette->items[i]->type == JSON_STRING && hex_color(palette->items[i]->string, s->preset.palette + s->preset.npalette * 3))
+            s->preset.npalette++;
+    const struct json *fx = json_get(j, "effects");
+    for (int i = 0; FX[i]; i++) {
+        const struct json *v = fx && fx->type == JSON_OBJECT ? json_get(fx, FX[i]) : NULL;
+        s->preset.fx[i] = v && (v->type == JSON_NUMBER || v->type == JSON_BOOL) ? v->number : 0;
+    }
     if (!*s->preset.charset) { free((char *)s->preset.charset); s->preset.charset = strdup(" @"); }
     if (media) {
         if (media[0] == '/') snprintf(file, sizeof file, "%s.frames", media);
