@@ -1,6 +1,6 @@
 pkgbase = asciipaper
 	pkgdesc = Live, interactive ASCII wallpapers for Wayland; port any picture, GIF or video into one
-	pkgver = 1.1.0
+	pkgver = 1.2.0
 	pkgrel = 1
 	url = https://github.com/cYoren/asciipaper
 	install = asciipaper.install
@@ -21,7 +21,7 @@ pkgbase = asciipaper
 	depends = glib2
 	depends = hicolor-icon-theme
 	optdepends = ffmpeg: port pictures, GIFs and videos, and record wallpapers to video
-	source = asciipaper-1.1.0.tar.gz::https://github.com/cYoren/asciipaper/archive/refs/tags/v1.1.0.tar.gz
-	sha256sums = c0a9678a581a261aa2dbe86bb2419ab9cd1b3d0a6500641aa2b930713fd4d806
+	source = asciipaper-1.2.0.tar.gz::https://github.com/cYoren/asciipaper/archive/refs/tags/v1.2.0.tar.gz
+	sha256sums = 69e3b53186ade352a154f3eb8c07102e260b3758a33e019aa66c1350ed3aef48
 
 pkgname = asciipaper

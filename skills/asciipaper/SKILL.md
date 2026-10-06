@@ -10,7 +10,7 @@ asciipaper draws ASCII wallpapers on the desktop background layer of every monit
 ## Install / run
 
 ```sh
-yay -S asciipaper && systemctl --user enable --now asciipaper.service   # Arch (AUR)
+git clone https://github.com/cYoren/asciipaper && (cd asciipaper/packaging/aur && makepkg -si) && systemctl --user enable --now asciipaper.service   # Arch
 git clone https://github.com/cYoren/asciipaper && cd asciipaper && ./install.sh   # elsewhere
 asciipaper list                       # library: fluid, flow, matrix, yin-yang, plus the user's
 asciipaper set fluid                  # choose and keep
