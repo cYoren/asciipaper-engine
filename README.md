@@ -2,7 +2,7 @@
 
 Live, interactive **ASCII wallpapers** for Windows, Linux and macOS. One click turns any wallpaper into one of **38 styles**: LEGO bricks, pixel art, voxel cubes, CRT glass, Game Boy, CMYK print, Matrix code and more. Port any picture, GIF, video or post on X into ASCII art that moves on your desktop, or ask Claude to design a new one for you. Free, open source, and light on your GPU.
 
-**[⬇ Download for Windows 10 and 11](https://github.com/cYoren/asciipaper/releases/latest)** · Linux: [one command](#install) · macOS: [with Plash](#install)
+**[▶ Try it live in your browser](https://cyoren.github.io/asciipaper/)** · **[⬇ Download for Windows 10 and 11](https://github.com/cYoren/asciipaper/releases/latest)** · Linux: [one command](#install) · macOS: [with Plash](#install)
 
 ![One wallpaper through eight styles: characters, LEGO, vaporwave, CRT, Game Boy, CMYK, LED and glitch](assets/styles.gif)
 

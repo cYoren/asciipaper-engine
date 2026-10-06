@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>asciipaper: live ASCII wallpapers for Windows, Linux and macOS</title>
+<meta name="description" content="Free, open source live wallpapers made of ASCII characters. 38 one-click styles (LEGO, pixel art, CRT, Game Boy, CMYK, Matrix code), turn any picture, GIF or video into a moving wallpaper, and let AI design new ones.">
+<meta name="theme-color" content="#060707">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="canonical" href="https://cyoren.github.io/asciipaper/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="asciipaper: live ASCII wallpapers">
+<meta property="og:description" content="38 one-click styles, any picture or video turned into a moving ASCII wallpaper. Free for Windows, Linux and macOS.">
+<meta property="og:url" content="https://cyoren.github.io/asciipaper/">
+<meta property="og:image" content="https://cyoren.github.io/asciipaper/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://cyoren.github.io/asciipaper/og.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap">
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "asciipaper",
+ "applicationCategory": "DesktopEnhancementApplication", "operatingSystem": "Windows 10, Windows 11, Linux, macOS",
+ "offers": {"@type": "Offer", "price": "0"}, "license": "https://opensource.org/licenses/MIT",
+ "downloadUrl": "https://github.com/cYoren/asciipaper/releases/latest", "image": "https://cyoren.github.io/asciipaper/og.jpg",
+ "description": "Live, interactive ASCII wallpapers with 38 one-click styles. Port any picture, GIF or video."}
+</script>
+<style>
+  :root { --bg: #060707; --ink: #e9efe9; --dim: #9aa5a0; --line: #ffffff1f; --glass: #060707b8; --accent: #e8b900; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 "JetBrains Mono", ui-monospace, monospace; }
+  a { color: inherit; }
+  .hero { position: relative; height: 100svh; min-height: 560px; overflow: hidden; }
+  .hero iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .panel { position: absolute; left: clamp(16px, 4vw, 56px); top: clamp(16px, 6vh, 64px); max-width: 560px;
+           padding: 28px; background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+           border: 1px solid var(--line); border-radius: 18px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .02em; }
+  .brand img { width: 28px; height: 28px; }
+  h1 { font-size: clamp(28px, 4.4vw, 50px); line-height: 1.08; margin: 18px 0 12px; letter-spacing: -.02em; }
+  .lede { color: var(--dim); margin: 0 0 22px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 10px; }
+  .button { display: inline-flex; align-items: center; gap: 8px; padding: 11px 16px; border-radius: 10px; font-weight: 700;
+            text-decoration: none; border: 1px solid var(--line); background: #ffffff10; }
+  .button.primary { background: var(--accent); color: #111; border-color: transparent; }
+  .button:hover { filter: brightness(1.12); }
+  .styles { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px clamp(16px, 4vw, 56px) 22px;
+            background: linear-gradient(transparent, #000c 45%); }
+  .styles p { margin: 0 0 8px; color: var(--dim); font-size: 13px; }
+  .chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .chips button { flex: none; font: inherit; font-size: 14px; color: var(--ink); background: var(--glass); cursor: pointer;
+                  border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; }
+  .chips button[aria-pressed="true"] { background: var(--ink); color: #111; }
+  main { max-width: 1080px; margin: 0 auto; padding: 72px 16px 40px; }
+  h2 { font-size: clamp(22px, 3vw, 32px); margin: 0 0 14px; letter-spacing: -.01em; }
+  section { margin-bottom: 72px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: #ffffff06; }
+  .card h3 { margin: 0 0 6px; font-size: 16px; }
+  .card p { margin: 0; color: var(--dim); font-size: 14px; }
+  img.wide { width: 100%; border-radius: 14px; border: 1px solid var(--line); display: block; }
+  pre { background: #ffffff0a; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; overflow-x: auto; font-size: 14px; }
+  .platforms .card h3 { font-size: 18px; }
+  footer { text-align: center; color: var(--dim); font-size: 13px; padding: 30px 16px 50px; }
+  @media (max-width: 640px) { .panel { right: 16px; padding: 20px; } .lede { font-size: 14px; } }
+</style>
+</head>
+<body>
+<header class="hero">
+  <iframe id="demo" src="demos/fluid.html" title="A live asciipaper wallpaper: move your pointer over it"></iframe>
+  <div class="panel">
+    <div class="brand"><img src="icon.svg" alt="">asciipaper</div>
+    <h1>Your desktop, drawn in characters.</h1>
+    <p class="lede">Live wallpapers that move with your mouse. One click turns them into LEGO, pixel art, CRT glass, Game Boy or Matrix code, and any picture or video you love becomes one too. Free and open source.</p>
+    <div class="cta">
+      <a class="button primary" href="https://github.com/cYoren/asciipaper/releases/latest">⬇ Windows</a>
+      <a class="button" href="#install">Linux</a>
+      <a class="button" href="#install">macOS</a>
+      <a class="button" href="https://github.com/cYoren/asciipaper">★ GitHub</a>
+    </div>
+  </div>
+  <nav class="styles" aria-label="Try a style">
+    <p>This is running live in your browser. Move your pointer, then try a style:</p>
+    <div class="chips" id="chips"></div>
+  </nav>
+</header>
+
+<main>
+  <section>
+    <h2>38 styles, one click</h2>
+    <p class="lede">Every wallpaper takes any style, then you fine-tune it live: 13 shapes, 21 character sets, 20 retro palettes, dithering, and effects you can stack: CRT curve, scanlines, bloom, RGB split, grain, glitch.</p>
+    <img class="wide" src="og.jpg" alt="Twelve styles: LEGO, CMYK, Game Boy, CRT, Matrix code, voxel, LED, vaporwave, halftone, PICO-8, glitch and braille" loading="lazy">
+  </section>
+
+  <section>
+    <h2>Make it yours</h2>
+    <div class="grid">
+      <div class="card"><h3>Port anything</h3><p>Drop in a photo, a GIF, a video or a link to a post on X. asciipaper measures it and picks a great starting look.</p></div>
+      <div class="card"><h3>Share a look in one line</h3><p>Every look is a short code. Paste a friend's code and you get their exact style. Pictures you save carry their look inside.</p></div>
+      <div class="card"><h3>Big text</h3><p>Your name, a word, a quote: drawn in characters, rippling under your pointer, in any style.</p></div>
+      <div class="card"><h3>Let AI design one</h3><p>Ask Claude for "a slow teal aurora, CRT style". It writes the wallpaper, looks at each attempt, and sets the one you like.</p></div>
+      <div class="card"><h3>Light on your PC</h3><p>A tiny native engine draws on the GPU at under 1% of a CPU core, and pauses behind fullscreen windows.</p></div>
+      <div class="card"><h3>Write your own</h3><p>A wallpaper is one GLSL function. Save the file and it updates on your desktop as you type.</p></div>
+    </div>
+  </section>
+
+  <section class="platforms" id="install">
+    <h2>Get it</h2>
+    <div class="grid">
+      <div class="card"><h3>Windows 10 and 11</h3><p>Download the installer from <a href="https://github.com/cYoren/asciipaper/releases/latest">Releases</a> and run it. No admin rights needed. It lives in the tray and starts with Windows.</p></div>
+      <div class="card"><h3>Linux</h3><p>Hyprland, KDE Plasma, Sway, niri, COSMIC and other Wayland desktops.</p></div>
+      <div class="card"><h3>macOS</h3><p>Export any wallpaper as a ZIP (from Windows or Linux, or one a friend shares), unzip, and open <code>index.html</code> in the free <a href="https://sindresorhus.com/plash">Plash</a> app.</p></div>
+    </div>
+    <pre>git clone https://github.com/cYoren/asciipaper &amp;&amp; cd asciipaper &amp;&amp; ./install.sh   # Linux
+claude mcp add --scope user asciipaper -- asciipaper mcp                            # let Claude design wallpapers</pre>
+  </section>
+</main>
+
+<footer>MIT licensed · <a href="https://github.com/cYoren/asciipaper">github.com/cYoren/asciipaper</a> · Fluid is an offline port of asciify.org's (MIT)</footer>
+
+<script>
+  const STYLES = [['fluid', 'Fluid'], ['lego', 'LEGO'], ['crt', 'CRT'], ['gameboy', 'Game Boy'], ['cmyk', 'CMYK print'],
+    ['matrix-code', 'Matrix code'], ['voxel', 'Voxel'], ['led', 'LED'], ['vaporwave', 'Vaporwave'], ['halftone', 'Halftone'],
+    ['pico8', 'PICO-8'], ['glitch', 'Glitch'], ['braille', 'Braille'], ['disco', 'Disco'], ['noir', 'Noir'],
+    ['thermal', 'Thermal'], ['characters', 'Characters']];
+  const frame = document.getElementById('demo'), chips = document.getElementById('chips');
+  for (const [id, label] of STYLES) {
+    const b = Object.assign(document.createElement('button'), {textContent: label});
+    b.setAttribute('aria-pressed', id === 'fluid');
+    b.addEventListener('click', () => {
+      frame.src = `demos/${id}.html`;
+      for (const other of chips.children) other.setAttribute('aria-pressed', other === b);
+    });
+    chips.append(b);
+  }
+</script>
+</body>
+</html>

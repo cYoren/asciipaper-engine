@@ -1,0 +1,631 @@
+{
+ "charsets": {
+  "classic": " .:-=+*#%@",
+  "detailed": " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
+  "blocks": " ░▒▓█",
+  "braille": " ⠁⠃⠇⡇⣇⣧⣷⣿",
+  "dots": " ·•●",
+  "letters": " .ilLCFTYASMW",
+  "asciify": " .:-=+ASCIIFY#@",
+  "binary": " 01",
+  "standard": " .:;-=+xX80S#@",
+  "ink": " .:~+*?#%$@",
+  "minimal": " ▀▄█",
+  "bars": " ▁▂▃▄▅▆▇█",
+  "quadrants": " ▘▝▞▚▜▟▙▛█",
+  "numeric": " .1723549608",
+  "hacker": " .-+*xX01#@",
+  "alpha": " :rcvwQOKXAHBMW",
+  "mixed": " .,:;ilwxXW#@",
+  "circles": " ·∙○◔◑◕●",
+  "geometric": " ·▽△◇▼▲◼◆█",
+  "math": " ·+÷×ΩΨΔΣ#",
+  "katakana": " ･ｰﾒｹﾏﾃﾎｱﾘｵﾜｻﾆﾓﾅｼｳﾂﾋﾐﾊ"
+ },
+ "shapes": [
+  "glyph",
+  "pixel",
+  "mosaic",
+  "dots",
+  "led",
+  "lego",
+  "cross",
+  "diamond",
+  "lines",
+  "diagonal",
+  "voxel",
+  "disco",
+  "cmyk"
+ ],
+ "dithers": [
+  "none",
+  "bayer2",
+  "bayer4",
+  "bayer8",
+  "bayer16",
+  "halftone",
+  "radial",
+  "linesH",
+  "linesV",
+  "linesD",
+  "whiteNoise",
+  "blueNoise"
+ ],
+ "diffusion": [
+  "atkinson",
+  "floyd",
+  "sierraLite",
+  "stucki"
+ ],
+ "effects": {
+  "vignette": [
+   0,
+   1
+  ],
+  "scanlines": [
+   0,
+   1
+  ],
+  "crt": [
+   0,
+   1
+  ],
+  "rgbSplit": [
+   0,
+   1
+  ],
+  "grain": [
+   0,
+   1
+  ],
+  "glitch": [
+   0,
+   1
+  ],
+  "bloom": [
+   0,
+   1
+  ],
+  "dust": [
+   0,
+   1
+  ],
+  "saturation": [
+   -1,
+   1
+  ],
+  "hue": [
+   -0.5,
+   0.5
+  ],
+  "flicker": [
+   0,
+   1
+  ]
+ },
+ "warps": [
+  "none",
+  "twirl",
+  "spherize",
+  "ripple",
+  "zigzag",
+  "polar",
+  "kaleidoscope",
+  "shear"
+ ],
+ "palettes": {
+  "mono": [
+   "#000000",
+   "#ffffff"
+  ],
+  "binary": [
+   "#000000",
+   "#ffffff"
+  ],
+  "grey4": [
+   "#000000",
+   "#555555",
+   "#aaaaaa",
+   "#ffffff"
+  ],
+  "grey8": [
+   "#000000",
+   "#242424",
+   "#494949",
+   "#6d6d6d",
+   "#929292",
+   "#b6b6b6",
+   "#dbdbdb",
+   "#ffffff"
+  ],
+  "gameboy": [
+   "#0f380f",
+   "#306230",
+   "#8bac0f",
+   "#9bbc0f"
+  ],
+  "cga0": [
+   "#000000",
+   "#55ff55",
+   "#ff5555",
+   "#ffff55"
+  ],
+  "cga1": [
+   "#000000",
+   "#55ffff",
+   "#ff55ff",
+   "#ffffff"
+  ],
+  "pico8": [
+   "#000000",
+   "#1d2b53",
+   "#7e2553",
+   "#008751",
+   "#ab5236",
+   "#5f574f",
+   "#c2c3c7",
+   "#fff1e8",
+   "#ff004d",
+   "#ffa300",
+   "#ffec27",
+   "#00e436",
+   "#29adff",
+   "#83769c",
+   "#ff77a8",
+   "#ffccaa"
+  ],
+  "c64": [
+   "#000000",
+   "#ffffff",
+   "#880000",
+   "#aaffee",
+   "#cc44cc",
+   "#00cc55",
+   "#0000aa",
+   "#eeee77",
+   "#dd8855",
+   "#664400",
+   "#ff7777",
+   "#333333",
+   "#777777",
+   "#aaff66",
+   "#0088ff",
+   "#bbbbbb"
+  ],
+  "nes16": [
+   "#000000",
+   "#fcfcfc",
+   "#bcbcbc",
+   "#7c7c7c",
+   "#a4e4fc",
+   "#3cbcfc",
+   "#0078f8",
+   "#0000fc",
+   "#b8b8f8",
+   "#6888fc",
+   "#d800cc",
+   "#f878f8",
+   "#f83800",
+   "#f8b800",
+   "#00b800",
+   "#58f898"
+  ],
+  "rgb3": [
+   "#000000",
+   "#ff0000",
+   "#00ff00",
+   "#0000ff",
+   "#ffff00",
+   "#ff00ff",
+   "#00ffff",
+   "#ffffff"
+  ],
+  "cyberpunk": [
+   "#0d0221",
+   "#2e2157",
+   "#ff2a6d",
+   "#ff6ec7",
+   "#05d9e8",
+   "#d1f7ff"
+  ],
+  "pastel": [
+   "#77685d",
+   "#ffb347",
+   "#fdfd96",
+   "#c1e1c1",
+   "#aec6cf",
+   "#cbaacb",
+   "#ffd1dc",
+   "#f5f5f5"
+  ],
+  "riso": [
+   "#1a1a1a",
+   "#0078bf",
+   "#ff48b0",
+   "#00a95c",
+   "#ffe800",
+   "#f2efe6"
+  ],
+  "sepia": [
+   "#2b1d0e",
+   "#5e4122",
+   "#8f6a3f",
+   "#c29a64",
+   "#f0dcb4"
+  ],
+  "thermal": [
+   "#000000",
+   "#2a0a6b",
+   "#7b1fa2",
+   "#c0127a",
+   "#ff3d00",
+   "#ff9100",
+   "#ffd600",
+   "#ffffff"
+  ],
+  "blueprint": [
+   "#0b2a6f",
+   "#1f4fa8",
+   "#6f9be0",
+   "#dbe8ff"
+  ],
+  "matrix": [
+   "#000000",
+   "#003b00",
+   "#008f11",
+   "#00ff41",
+   "#b6ffc4"
+  ],
+  "vaporwave": [
+   "#1b1035",
+   "#4b1d7a",
+   "#ff71ce",
+   "#01cdfe",
+   "#05ffa1",
+   "#b967ff",
+   "#fffb96"
+  ],
+  "bonsai": [
+   "#2e2418",
+   "#6b4f2a",
+   "#a8794a",
+   "#d9b77e",
+   "#f2e3c0"
+  ]
+ },
+ "styles": {
+  "characters": {
+   "about": "Classic ASCII characters",
+   "shape": "glyph",
+   "charset": "standard",
+   "aspect": 0.55,
+   "cell": 8
+  },
+  "blocks": {
+   "about": "Shaded block characters",
+   "shape": "glyph",
+   "charset": "blocks",
+   "aspect": 0.55,
+   "cell": 8
+  },
+  "braille": {
+   "about": "Fine braille dots",
+   "shape": "glyph",
+   "charset": "braille",
+   "aspect": 0.55,
+   "cell": 6
+  },
+  "mixed": {
+   "about": "Letters and symbols",
+   "shape": "glyph",
+   "charset": "mixed",
+   "aspect": 0.55,
+   "cell": 8
+  },
+  "binary": {
+   "about": "Ones and zeros",
+   "shape": "glyph",
+   "charset": "binary",
+   "aspect": 0.55,
+   "cell": 9
+  },
+  "matrix-code": {
+   "about": "Green katakana rain over the picture, with phosphor glow",
+   "shape": "glyph",
+   "charset": "katakana",
+   "aspect": 0.55,
+   "cell": 10,
+   "palette": "matrix",
+   "background": "#000000",
+   "effects": {
+    "bloom": 0.6,
+    "scanlines": 0.3,
+    "vignette": 0.6
+   }
+  },
+  "pixel": {
+   "about": "Pixel art",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "pixel",
+   "cell": 8
+  },
+  "mosaic": {
+   "about": "Square tiles with grout",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "mosaic",
+   "cell": 12
+  },
+  "lego": {
+   "about": "LEGO bricks, studs and all",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "lego",
+   "cell": 16
+  },
+  "voxel": {
+   "about": "Lit cubes, sized by brightness",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "voxel",
+   "cell": 14
+  },
+  "led": {
+   "about": "An LED matrix",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "led",
+   "cell": 10,
+   "background": "#050505",
+   "effects": {
+    "bloom": 0.5
+   }
+  },
+  "disco": {
+   "about": "Mirror-ball tiles that glint",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "disco",
+   "cell": 14
+  },
+  "dots": {
+   "about": "Dots sized by brightness",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "dots",
+   "cell": 10
+  },
+  "halftone": {
+   "about": "Ink dots on paper",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "dots",
+   "cell": 9,
+   "background": "#f2ede4",
+   "palette": [
+    "#1a1a1a"
+   ],
+   "uniforms": {
+    "invert": 1,
+    "backdrop": 0
+   }
+  },
+  "cmyk": {
+   "about": "Four-colour print rosettes on paper",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "cmyk",
+   "cell": 10,
+   "background": "#f4efe6"
+  },
+  "cross": {
+   "about": "Crosses sized by brightness",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "cross",
+   "cell": 12
+  },
+  "diamond": {
+   "about": "Diamonds sized by brightness",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "diamond",
+   "cell": 12
+  },
+  "lines": {
+   "about": "Vertical lines",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "lines",
+   "cell": 8
+  },
+  "diagonal": {
+   "about": "Diagonal hatching",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "diagonal",
+   "cell": 10
+  },
+  "dither": {
+   "about": "1-bit ordered dither",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "pixel",
+   "cell": 3,
+   "dither": "bayer8",
+   "palette": "mono"
+  },
+  "gameboy": {
+   "about": "Game Boy greens, Bayer dither",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "pixel",
+   "cell": 5,
+   "dither": "bayer4",
+   "palette": "gameboy"
+  },
+  "c64": {
+   "about": "Commodore 64 palette, chunky pixels",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "pixel",
+   "cell": 8,
+   "dither": "bayer8",
+   "palette": "c64"
+  },
+  "pico8": {
+   "about": "PICO-8 palette, Bayer dither",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "pixel",
+   "cell": 6,
+   "dither": "bayer8",
+   "palette": "pico8"
+  },
+  "nes": {
+   "about": "NES-style palette",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "pixel",
+   "cell": 6,
+   "dither": "bayer4",
+   "palette": "nes16"
+  },
+  "cga": {
+   "about": "CGA cyan and magenta",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "pixel",
+   "cell": 5,
+   "dither": "bayer4",
+   "palette": "cga1"
+  },
+  "bonsai": {
+   "about": "Horizontal-line dither in warm vintage tones",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "pixel",
+   "cell": 4,
+   "dither": "linesH",
+   "palette": "bonsai"
+  },
+  "risograph": {
+   "about": "Riso inks, halftone grain",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "pixel",
+   "cell": 4,
+   "dither": "halftone",
+   "palette": "riso",
+   "effects": {
+    "grain": 0.3
+   }
+  },
+  "thermal": {
+   "about": "A thermal camera",
+   "shape": "glyph",
+   "charset": "blocks",
+   "aspect": 0.55,
+   "cell": 8,
+   "palette": "thermal"
+  },
+  "blueprint": {
+   "about": "Cyanotype blues",
+   "shape": "glyph",
+   "charset": "standard",
+   "aspect": 0.55,
+   "cell": 8,
+   "palette": "blueprint",
+   "background": "#08214f"
+  },
+  "sepia": {
+   "about": "Old photograph",
+   "shape": "glyph",
+   "charset": "standard",
+   "aspect": 0.55,
+   "cell": 8,
+   "palette": "sepia",
+   "effects": {
+    "grain": 0.35,
+    "vignette": 0.7,
+    "dust": 0.4
+   }
+  },
+  "noir": {
+   "about": "High-contrast black and white film",
+   "shape": "glyph",
+   "charset": "standard",
+   "aspect": 0.55,
+   "cell": 8,
+   "effects": {
+    "saturation": -1,
+    "grain": 0.5,
+    "dust": 0.5,
+    "vignette": 1
+   }
+  },
+  "crt": {
+   "about": "An old monitor: curved glass, scanlines, glow",
+   "effects": {
+    "crt": 0.5,
+    "scanlines": 0.6,
+    "bloom": 0.5,
+    "rgbSplit": 0.25,
+    "vignette": 0.6,
+    "flicker": 0.3
+   }
+  },
+  "glitch": {
+   "about": "Torn, shifting signal",
+   "effects": {
+    "glitch": 0.7,
+    "rgbSplit": 0.6,
+    "grain": 0.2
+   }
+  },
+  "lofi": {
+   "about": "Washed-out tape",
+   "effects": {
+    "saturation": -0.4,
+    "rgbSplit": 0.35,
+    "grain": 0.4,
+    "scanlines": 0.3
+   }
+  },
+  "cyberpunk": {
+   "about": "Neon magenta and cyan, glowing",
+   "palette": "cyberpunk",
+   "effects": {
+    "bloom": 0.7,
+    "rgbSplit": 0.3
+   }
+  },
+  "vaporwave": {
+   "about": "Pastel neon tiles, chromatic drift",
+   "aspect": 1,
+   "fill": 0,
+   "shape": "mosaic",
+   "cell": 12,
+   "palette": "vaporwave",
+   "effects": {
+    "rgbSplit": 0.4,
+    "scanlines": 0.4,
+    "bloom": 0.5
+   }
+  },
+  "neon": {
+   "about": "Saturated, blooming",
+   "effects": {
+    "bloom": 1,
+    "saturation": 0.6
+   }
+  },
+  "anaglyph": {
+   "about": "Red and cyan 3D",
+   "effects": {
+    "rgbSplit": 1
+   }
+  }
+ }
+}
