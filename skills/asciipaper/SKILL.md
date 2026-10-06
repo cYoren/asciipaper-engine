@@ -17,6 +17,8 @@ asciipaper set fluid                  # choose and keep
 asciipaper --studio                   # GUI: gallery, live Look settings, porting, export
 ```
 
+If the `asciipaper` MCP tools are connected (`asciipaper mcp`), prefer them: `write_wallpaper` returns a snapshot of the result (or the shader error), so iterate until it looks right, then `set_wallpaper`.
+
 ## Port a picture, GIF or video
 
 ```sh

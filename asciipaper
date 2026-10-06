@@ -18,6 +18,7 @@ Usage:
   asciipaper preview NAME    open a wallpaper in a normal window; reloads when you save
   asciipaper export NAME [OUTPUT.zip]  one ZIP for Wallpaper Engine / Lively (Windows) and Plash (macOS)
   asciipaper render NAME OUT.mp4|webm|gif [--seconds S] [--size WxH]  record it as a video or GIF
+  asciipaper mcp             MCP server (stdio): let Claude, Cursor or any MCP client design and switch wallpapers
 """
 import os
 import json
@@ -1512,10 +1513,143 @@ def set_wallpaper(target):
         print("Saved. Apply it with: flatpak kill io.github.cyoren.asciipaper, then launch asciipaper again.")
 
 
+def snapshot_png(target, seconds=3.0, size="960x540"):
+    """One PNG frame of a wallpaper via asciipaper-engine; raises with the engine's error (e.g. a shader that won't compile)."""
+    args = engine_args(target)
+    if not args:
+        raise ValueError("snapshots work with the built-in presets and with ported or shader wallpapers")
+    if not re.fullmatch(r"\d{2,4}x\d{2,4}", size):
+        raise ValueError("size is WIDTHxHEIGHT, e.g. 960x540")
+    with tempfile.TemporaryDirectory(prefix="asciipaper-snap-") as folder:
+        png = Path(folder) / "snap.png"
+        done = subprocess.run([*args, "--snapshot", str(png), "--size", size, "--seconds", str(float(seconds))],
+                              capture_output=True, text=True, env=engine_env(), timeout=120)
+        if done.returncode or not png.is_file():
+            raise ValueError(done.stderr.strip() or "engine error")
+        return png.read_bytes()
+
+
+def write_wallpaper(name, shader=None, look=None):
+    """Create or update the user's shader wallpaper NAME from GLSL and/or spec fields; it updates live if showing."""
+    if not re.fullmatch(NAME_RE, name):
+        raise ValueError("names use letters, numbers, spaces, _ and - (up to 48 characters)")
+    path = USER_WALLPAPERS / f"{name}.json"
+    if not path.exists() and taken(name):
+        raise ValueError(f"{name!r} is built in; pick another name")
+    if not path.exists() and not shader:
+        raise ValueError("a new wallpaper needs a shader")
+    if look is not None and not isinstance(look, dict):
+        raise ValueError("look is an object of spec fields")
+    spec = read_spec(path) if path.exists() else {"title": name, "charset": CHARSETS["asciify"], "cell": 10,
+                                                  "aspect": 0.6, "background": "#080909", "fill": 0.1, "uniforms": {}}
+    spec.update(look or {})
+    USER_WALLPAPERS.mkdir(parents=True, exist_ok=True)
+    ensure_user_api()
+    if shader:
+        (USER_WALLPAPERS / f"{name}.glsl").write_text(shader, encoding="utf-8")
+        spec["shader"] = f"{name}.glsl"
+    path.write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    spec_html(path)
+
+
+MCP_TOOLS = [
+    ("list_wallpapers", "List every wallpaper name (presets, built-in shaders, the user's own) and which one is showing.", {}, []),
+    ("get_wallpaper", "Read a shader or ported wallpaper: its spec JSON (charset, cell, aspect, background, fill, weight, "
+     "uniforms…) and GLSL source. Read one before writing a variation of it.", {"name": {"type": "string"}}, ["name"]),
+    ("write_wallpaper", "Create or update one of the user's shader wallpapers. shader is GLSL defining "
+     "`vec4 cell(vec2 uv)` returning (r, g, b, level 0..1); uniforms available: u_time u_grid u_size u_aspect u_pointer "
+     "u_velocity u_down u_idle u_strength u_clicks[8], plus your own `uniform float x;` set in look.uniforms. look holds "
+     "spec fields to merge (title, charset, cell, aspect, background, fill, weight, uniforms). Returns a snapshot so you "
+     "can see the result; it does not change the desktop (use set_wallpaper).",
+     {"name": {"type": "string"}, "shader": {"type": "string"}, "look": {"type": "object"}}, ["name"]),
+    ("snapshot", "Render one frame of a wallpaper to an image and return it.",
+     {"name": {"type": "string"}, "seconds": {"type": "number", "description": "simulated time first, default 3"},
+      "size": {"type": "string", "description": "WxH, default 960x540"}}, ["name"]),
+    ("set_wallpaper", "Show a wallpaper on the desktop (saves the choice and restarts the service).",
+     {"name": {"type": "string", "description": "a wallpaper name, URL or .html path"}}, ["name"]),
+    ("import_media", "Port a picture, GIF, video, URL or X/Twitter post into a new ASCII wallpaper, without showing it yet.",
+     {"source": {"type": "string"}, "name": {"type": "string"}}, ["source"]),
+    ("render", "Record a wallpaper to a video or GIF file (by the output's extension: mp4, webm, mkv, mov, gif).",
+     {"name": {"type": "string"}, "output": {"type": "string"}, "seconds": {"type": "number"}}, ["name", "output"]),
+]
+
+
+def mcp_call(tool, a):
+    """Run one MCP tool; return MCP content blocks."""
+    text = lambda s: [{"type": "text", "text": s}]
+    image = lambda png: [{"type": "image", "mimeType": "image/png", "data": __import__("base64").b64encode(png).decode()}]
+    if tool == "list_wallpapers":
+        current = CONFIG.read_text().strip() if CONFIG.exists() else DEFAULT
+        return text(json.dumps({"showing": current, "wallpapers": library()}))
+    if tool == "get_wallpaper":
+        spec = spec_file(a["name"])
+        if not spec:
+            raise ValueError(f"{a['name']!r} is a preset or HTML wallpaper; only shader and ported wallpapers have a spec"
+                             if a["name"] in library() else f"no wallpaper named {a['name']!r}")
+        data = read_spec(spec)
+        return text(json.dumps({"spec": data, "shader": spec_shader(data, spec.parent)[0]}, ensure_ascii=False))
+    if tool == "write_wallpaper":
+        write_wallpaper(a["name"], a.get("shader"), a.get("look"))
+        try:
+            return text(f"Saved {a['name']}.") + image(snapshot_png(a["name"]))
+        except (ValueError, subprocess.TimeoutExpired) as error:
+            return text(f"Saved {a['name']}, but it doesn't render: {error}")
+    if tool == "snapshot":
+        return image(snapshot_png(a["name"], a.get("seconds", 3), a.get("size", "960x540")))
+    if tool == "set_wallpaper":
+        resolve(a["name"])
+        set_wallpaper(a["name"])
+        return text(f"Showing {a['name']}.")
+    if tool == "import_media":
+        if a.get("name") and not re.fullmatch(NAME_RE, a["name"]):
+            raise ValueError("names use letters, numbers, spaces, _ and - (up to 48 characters)")
+        name = import_media(a["source"], a.get("name"))
+        return text(f"Created {name}.") + image(snapshot_png(name))
+    if tool == "render":
+        return text(f"Created {render_video(a['name'], a['output'], a.get('seconds'))}")
+    raise ValueError(f"unknown tool {tool}")
+
+
+def mcp():
+    """A stdio MCP server, so Claude, Cursor or any MCP client can design and switch wallpapers."""
+    out = os.fdopen(os.dup(1), "w", buffering=1)
+    os.dup2(2, 1)   # anything else printed (here or by child processes) goes to stderr, not into the protocol
+    tools = [{"name": n, "description": d, "inputSchema": {"type": "object", "properties": p, "required": r}}
+             for n, d, p, r in MCP_TOOLS]
+    for line in sys.stdin:
+        try:
+            message = json.loads(line)
+        except ValueError:
+            continue
+        method, params = message.get("method"), message.get("params") or {}
+        if "id" not in message:
+            continue   # a notification
+        reply = {"jsonrpc": "2.0", "id": message["id"]}
+        if method == "initialize":
+            reply["result"] = {"protocolVersion": params.get("protocolVersion", "2025-06-18"), "capabilities": {"tools": {}},
+                               "serverInfo": {"name": "asciipaper", "version": VERSION}}
+        elif method == "ping":
+            reply["result"] = {}
+        elif method == "tools/list":
+            reply["result"] = {"tools": tools}
+        elif method == "tools/call":
+            try:
+                reply["result"] = {"content": mcp_call(params.get("name"), params.get("arguments") or {})}
+            except SystemExit as error:   # the CLI's helpers exit with a message
+                reply["result"] = {"content": [{"type": "text", "text": str(error.code)}], "isError": True}
+            except (ValueError, KeyError, OSError, subprocess.TimeoutExpired) as error:
+                reply["result"] = {"content": [{"type": "text", "text": f"asciipaper: {error}"}], "isError": True}
+        else:
+            reply["error"] = {"code": -32601, "message": f"unknown method {method}"}
+        out.write(json.dumps(reply) + "\n")
+
+
 def main():
     args = sys.argv[1:]
     if args in (["--version"], ["-v"]):
         print(f"asciipaper {VERSION}")
+    elif args == ["mcp"]:
+        mcp()
     elif args[:1] == ["list"]:
         print("\n".join(library()))
     elif args[:1] == ["import"] and len(args) in {2, 3}:

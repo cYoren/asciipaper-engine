@@ -51,6 +51,16 @@ asciipaper export aurora               # ZIP for Windows and macOS
 asciipaper render aurora aurora.mp4    # record a video or GIF
 ```
 
+## Let your AI agent design wallpapers
+
+asciipaper is also an MCP server. Hook it up and ask Claude, Cursor or any MCP client for a look in plain words ("a slow aurora in teal", "port this video, make it greener"). The agent writes the shader, **sees a snapshot of every attempt** (shader errors come back to it too), and puts the one you like on your desktop.
+
+```sh
+claude mcp add --scope user asciipaper -- asciipaper mcp        # Claude Code
+```
+
+Anywhere else, add a stdio server with the command `asciipaper mcp`. Tools: `list_wallpapers`, `get_wallpaper`, `write_wallpaper`, `snapshot`, `set_wallpaper`, `import_media`, `render`.
+
 ## Port anything
 
 ![A ported video, reacting to the pointer](assets/port.gif)
