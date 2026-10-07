@@ -1,6 +1,6 @@
 # asciipaper
 
-> Live, interactive ASCII wallpapers. Native GPU engine on Wayland desktops with layer-shell (Hyprland, KDE Plasma, Sway, niri, COSMIC, river, Wayfire, labwc); exports for Wallpaper Engine / Lively (Windows) and Plash (macOS); records to video or GIF for everything else. Ports any picture, GIF, video or X/Twitter post into an ASCII wallpaper.
+> Live, interactive ASCII wallpapers (Linux, Windows, macOS via Plash, Android live wallpaper). Native GPU engine on Wayland desktops with layer-shell (Hyprland, KDE Plasma, Sway, niri, COSMIC, river, Wayfire, labwc); exports for Wallpaper Engine / Lively (Windows) and Plash (macOS); records to video or GIF for everything else. Ports any picture, GIF, video or X/Twitter post into an ASCII wallpaper.
 
 - Repo: https://github.com/cYoren/asciipaper
 - Install: `git clone https://github.com/cYoren/asciipaper && cd asciipaper && ./install.sh`

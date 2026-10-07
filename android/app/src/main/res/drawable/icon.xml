@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The asciipaper icon (io.github.cyoren.asciipaper.svg) as a vector drawable. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp"
+    android:viewportWidth="128" android:viewportHeight="128">
+    <path android:fillColor="#080d0e" android:pathData="M28,0h72a28,28 0 0 1 28,28v72a28,28 0 0 1 -28,28h-72a28,28 0 0 1 -28,-28v-72a28,28 0 0 1 28,-28z"/>
+    <path android:fillColor="#b8d9d3" android:pathData="M19,64a45,45 0 1,0 90,0a45,45 0 1,0 -90,0"/>
+    <path android:fillColor="#163b3d" android:pathData="M64,19a22.5,22.5 0 0 1 0,45 22.5,22.5 0 0 0 0,45 45,45 0 0 0 0,-90"/>
+    <path android:fillColor="#163b3d" android:pathData="M59.5,41.5a4.5,4.5 0 1,0 9,0a4.5,4.5 0 1,0 -9,0"/>
+    <path android:fillColor="#b8d9d3" android:pathData="M59.5,86.5a4.5,4.5 0 1,0 9,0a4.5,4.5 0 1,0 -9,0"/>
+    <path android:strokeColor="#8de5d7" android:strokeWidth="2" android:pathData="M19,64a45,45 0 1,0 90,0a45,45 0 1,0 -90,0"/>
+</vector>

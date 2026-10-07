@@ -1,0 +1,24 @@
+// asciipaper for Android: a live wallpaper running the same shaders as the Linux engine and the web
+// renderer. Plain Java and the platform APIs only, no libraries. The wallpapers/ folder is bundled as-is.
+plugins { id "com.android.application" }
+
+android {
+    namespace "io.github.cyoren.asciipaper"
+    compileSdk 36
+    defaultConfig {
+        applicationId "io.github.cyoren.asciipaper"
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName "1.2.0"
+    }
+    sourceSets { main { assets.srcDirs = ["../../wallpapers"] } }
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Signed with the debug key unless a release key is configured: fine for sideloading.
+            signingConfig signingConfigs.debug
+        }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}

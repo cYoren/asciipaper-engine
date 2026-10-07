@@ -1,8 +1,8 @@
 # asciipaper
 
-Live, interactive **ASCII wallpapers** for Windows, Linux and macOS. One click turns any wallpaper into one of **38 styles**: LEGO bricks, pixel art, voxel cubes, CRT glass, Game Boy, CMYK print, Matrix code and more. Port any picture, GIF, video or post on X into ASCII art that moves on your desktop, or ask Claude to design a new one for you. Free, open source, and light on your GPU.
+Live, interactive **ASCII wallpapers** for Windows, Linux, macOS and Android. One click turns any wallpaper into one of **38 styles**: LEGO bricks, pixel art, voxel cubes, CRT glass, Game Boy, CMYK print, Matrix code and more. Port any picture, GIF, video or post on X into ASCII art that moves on your desktop, or ask Claude to design a new one for you. Free, open source, and light on your GPU.
 
-**[▶ Try it live in your browser](https://cyoren.github.io/asciipaper/)** · **[⬇ Download for Windows 10 and 11](https://github.com/cYoren/asciipaper/releases/latest)** · Linux: [one command](#install) · macOS: [with Plash](#install)
+**[▶ Try it live in your browser](https://cyoren.github.io/asciipaper/)** · **[⬇ Download for Windows 10 and 11](https://github.com/cYoren/asciipaper/releases/latest)** · Linux: [one command](#install) · macOS: [with Plash](#install) · **[Android](https://github.com/cYoren/asciipaper/releases/latest)** (`asciipaper-….apk`)
 
 ![One wallpaper through eight styles: characters, LEGO, vaporwave, CRT, Game Boy, CMYK, LED and glitch](assets/styles.gif)
 
@@ -23,6 +23,8 @@ Live, interactive **ASCII wallpapers** for Windows, Linux and macOS. One click t
 ## Install
 
 **Windows 10 and 11**: download `asciipaper-setup-….exe` from [Releases](https://github.com/cYoren/asciipaper/releases/latest) and run it. No administrator rights and nothing else to install (it uses .NET Framework and WebView2, which come with Windows). The installer isn't code-signed yet, so Windows may say it "protected your PC": choose **More info → Run anyway**. asciipaper then lives in the tray and starts with Windows.
+
+**Android 8 and up** (live wallpaper): download `asciipaper-….apk` from [Releases](https://github.com/cYoren/asciipaper/releases/latest) on your phone and open it (allow installing from your browser when asked). Open **asciipaper**, pick a wallpaper and a style, and tap **Set as wallpaper**. It reacts to your finger and stops drawing when you can't see it. Built-in wallpapers for now; ported pictures and videos come later.
 
 **macOS**: make or pick a wallpaper on Linux or Windows (or grab one people share), export it (`asciipaper export NAME`, or **Export** in the Studio), unzip, and open `index.html` in the free [Plash](https://sindresorhus.com/plash) app: it stays live and interactive. Prefer a plain video wallpaper? `asciipaper render NAME wallpaper.mp4`.
 
