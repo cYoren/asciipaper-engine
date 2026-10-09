@@ -54,6 +54,12 @@ jobs:
           cat apple/selftest/ios.json
           xcrun simctl shutdown "$device_id"
           python3 -c 'import json; assert json.load(open("apple/selftest/ios.json"))["ok"] is True'
+      - name: iPhone crash and log diagnostics
+        if: failure()
+        run: |
+          device_id=$(xcrun simctl list devices booted -j | python3 -c 'import json,sys; print(next((d["udid"] for ds in json.load(sys.stdin)["devices"].values() for d in ds), ""))')
+          if [ -n "$device_id" ]; then xcrun simctl spawn "$device_id" log show --last 15m --style compact --predicate 'process CONTAINS "ASCIIPaper" OR eventMessage CONTAINS "asciipaper"' | tail -150 || true; fi
+          for f in ~/Library/Logs/DiagnosticReports/ASCIIPaper*; do [ -f "$f" ] && { echo "== $f"; head -120 "$f"; }; done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
