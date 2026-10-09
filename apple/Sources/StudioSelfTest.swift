@@ -51,6 +51,7 @@ enum StudioSelfTest {
             let folder=index+1<args.count ? URL(fileURLWithPath:args[index+1],isDirectory:true) : FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0]
             try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
             var report=result ?? ["ok":false,"error":error?.localizedDescription ?? "No result"]
+            if let error=error as NSError? { report["details"]=error.userInfo.mapValues{String(describing:$0)} }
             if let image=report.removeValue(forKey:"image") as? String,let data=Data(base64Encoded:image) {
                 try data.write(to:folder.appendingPathComponent("studio.png"))
             }
