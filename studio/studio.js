@@ -113,7 +113,7 @@ function render() {
   queueThumbnails();
 }
 
-function update(next) { state = next; render(); if (editing && !item(editing)) closeDrawer(); }
+function update(next) { state = next; render(); if (document.activeElement !== speedInput) { speedInput.value = state.options?.speed ?? 1; speedInput.nextElementSibling.value = (+speedInput.value).toFixed(2); } if (editing && !item(editing)) closeDrawer(); }
 
 // ---- Thumbnails: render each wallpaper once, off to the side, and keep a snapshot.
 let thumbnailing = false;
@@ -477,6 +477,15 @@ for (const key of ['fps', 'idleFps', 'quality', 'pointer']) {
   input.addEventListener('input', () => { input.nextElementSibling.value = input.value; });
   input.addEventListener('change', () => host.call('setOptions', {options: {[key]: +input.value}}).then(update).catch(fail));
 }
+// Speed: the calm control, right under the wallpaper. Previews follow it live; the desktop on release.
+const speedInput = $('#speed'), previews = () => ['#now-preview', '#drawer-preview'].map(id => $(id)?.contentWindow?.asciipaper).filter(Boolean);
+speedInput.addEventListener('input', () => {
+  speedInput.nextElementSibling.value = (+speedInput.value).toFixed(2);
+  for (const live of previews()) live.set({speed: +speedInput.value});
+});
+speedInput.addEventListener('change', () => host.call('setOptions', {options: {speed: +speedInput.value}}).then(update).catch(fail));
+for (const id of ['#now-preview', '#drawer-preview'])
+  $(id).addEventListener('load', e => e.target.contentWindow?.asciipaper?.set({speed: state.options?.speed ?? 1}));
 $('#open-folder').addEventListener('click', () => host.call('openFolder').catch(fail));
 
 host.on('state', update);

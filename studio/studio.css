@@ -69,6 +69,8 @@ button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent);
   border-left: 1px solid var(--line); box-shadow: -20px 0 60px #000a; transform: translateX(105%); transition: transform .22s ease;
   display: flex; flex-direction: column; overflow-y: auto; }
 .drawer.open { transform: none; }
+.drawer > * { flex-shrink: 0; }   /* a tall control list must not squeeze the preview to nothing */
+.drawer .preview.small { position: sticky; top: 64px; z-index: 1; box-shadow: 0 10px 18px -8px #000; }
 .drawer-head { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px 12px; position: sticky; top: 0;
   background: var(--panel); z-index: 1; }
 .drawer .row.end { padding: 8px 20px 24px; }
@@ -80,6 +82,7 @@ button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent);
 .slider-row, .switch-row, .select-row, .color-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 14px;
   padding: 9px 0; border-bottom: 1px solid #222828; }
 .slider-row { grid-template-columns: 1fr 150px 42px; }
+.now-text .slider-row.speed { max-width: 420px; margin-top: 14px; border-bottom: 0; }
 .slider-row output { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
 input[type=range] { accent-color: var(--accent); width: 100%; }
 input[type=checkbox] { accent-color: var(--accent); width: 20px; height: 20px; }
@@ -103,6 +106,8 @@ dialog .row { margin-top: 18px; }
 @media (max-width: 520px) {
   main { padding: 14px; }
   .bar { padding: 10px 14px; }
+  .bar button { padding: 7px 11px; white-space: nowrap; }   /* Pause, Set wallpaper, Settings fit on one line */
+  .brand { font-size: 15px; gap: 6px; }
   .gallery { grid-template-columns: repeat(2,minmax(0,1fr)); gap:10px; }
   .card .edit { opacity:1; }
   .slider-row { grid-template-columns:minmax(90px,1fr) minmax(90px,1fr) 36px; }

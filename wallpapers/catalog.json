@@ -15,21 +15,21 @@
   },
   {
     "name": "flow",
-    "title": "flow",
+    "title": "Flow",
     "kind": "spec",
     "url": "run.html?spec=specs/flow.json",
     "spec": "specs/flow.json"
   },
   {
     "name": "fluid",
-    "title": "fluid",
+    "title": "Fluid",
     "kind": "spec",
     "url": "run.html?spec=specs/fluid.json",
     "spec": "specs/fluid.json"
   },
   {
     "name": "matrix",
-    "title": "matrix",
+    "title": "Matrix",
     "kind": "spec",
     "url": "run.html?spec=specs/matrix.json",
     "spec": "specs/matrix.json"
@@ -71,7 +71,7 @@
   },
   {
     "name": "yin-yang",
-    "title": "yin-yang",
+    "title": "Yin-yang",
     "kind": "spec",
     "url": "run.html?spec=specs/yin-yang.json",
     "spec": "specs/yin-yang.json"

@@ -45,7 +45,7 @@ final class Renderer implements GLSurfaceView.Renderer {
     private final float[] clicks = new float[24];
     volatile int surfaceWidth, surfaceHeight;
     volatile long frameCount;
-    volatile float pointerStrength = 1;
+    volatile float pointerStrength = 1, speed = 1;   // speed: wallpaper time, calm < 1 < lively
     volatile boolean clicksEnabled;
     private volatile long clicked=-100000;
     private long consumedClick=-100000;
@@ -113,13 +113,13 @@ final class Renderer implements GLSurfaceView.Renderer {
         if (!ready) { GLES20.glClearColor(0, 0, 0, 1); GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT); return; }
         if(renderedQuality!=quality)layoutOutput();
         long now = SystemClock.uptimeMillis();
-        float dt = previous == 0 || resetClock ? 0 : Math.min(1, (now - previous) / 1000f);
+        float dt = (previous == 0 || resetClock ? 0 : Math.min(1, (now - previous) / 1000f)) * speed;
         resetClock = false;
         previous = now;
         time = look.time + (time - look.time + dt) % look.period;
         float W = width / density, H = height / density;
 
-        if(media!=null){media.speed((float)look.uniforms.optDouble("speed",1));media.update(quad);}
+        if(media!=null){media.speed((float)look.uniforms.optDouble("speed",1)*speed);media.update(quad);}
 
         GLES20.glUseProgram(cellProg);
         if(media!=null)media.bindTo(cellProg);

@@ -15,6 +15,7 @@ Live, interactive **ASCII wallpapers** for Windows, Linux, macOS and Android. On
 - **Light.** A small native engine (C, OpenGL ES) draws on the GPU: under 1% of a CPU core and about 100 MB on Linux. Wallpapers stop drawing behind fullscreen and maximized windows, and while the PC is locked.
 - **Calm by default.** Wallpapers react to the pointer like liquid (fluid, yin-yang) and never chase it. Click ripples and the hover lens are there if you want them (Settings, Customize).
 - **Port anything.** Pictures, GIFs, videos, links, and posts on X or Twitter. asciipaper measures the media and picks a starting look: levels, colours, and which parts get the dense characters.
+- **Calm by choice.** One Speed slider, right under your wallpaper, slows any scene down (or speeds it up) everywhere: Linux, Windows, Mac and Android. From a terminal: `asciipaper speed 0.5`.
 - **38 styles, live.** Pick a style, then fine-tune shapes, 21 character sets, 20 retro palettes, dithering, CRT, bloom, glitch, grain and warps. Everything changes on your desktop as you move the sliders.
 - **Share a look in one line.** Every look is a short recipe code, and every PNG you render carries its own, so a screenshot you post *is* the wallpaper.
 - **Your AI can make them.** A built-in MCP server lets Claude, Cursor or any MCP client write wallpapers, see each attempt and set the one you like.

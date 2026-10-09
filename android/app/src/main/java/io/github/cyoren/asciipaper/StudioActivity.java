@@ -40,11 +40,13 @@ public final class StudioActivity extends Activity {
                 startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE),1);return true;
             }
         });
-        if(android.os.Build.VERSION.SDK_INT>=30)web.setOnApplyWindowInsetsListener((view,insets)->{
+        // A WebView ignores its own padding, so a frame keeps the Studio clear of the status and navigation bars.
+        android.widget.FrameLayout frame=new android.widget.FrameLayout(this);frame.setBackgroundColor(0xff0b0d0d);frame.addView(web);
+        if(android.os.Build.VERSION.SDK_INT>=30)frame.setOnApplyWindowInsetsListener((view,insets)->{
             android.graphics.Insets bars=insets.getInsets(android.view.WindowInsets.Type.systemBars()|android.view.WindowInsets.Type.displayCutout());
             view.setPadding(bars.left,bars.top,bars.right,bars.bottom);return insets;
         });
-        setContentView(web);web.loadUrl("https://asciipaper.local/app/studio/index.html");
+        setContentView(frame);web.loadUrl("https://asciipaper.local/app/studio/index.html");
     }
     private static boolean trusted(Uri u){return "https".equals(u.getScheme())&&"asciipaper.local".equals(u.getHost());}
     private static WebResourceResponse response(int status,String text){return new WebResourceResponse("text/plain","UTF-8",status,status==403?"Forbidden":"Not Found",java.util.Map.of(),new ByteArrayInputStream(text.getBytes(StandardCharsets.UTF_8)));}
@@ -99,7 +101,7 @@ public final class StudioActivity extends Activity {
                     case "wallpaper":runOnUiThread(()->startActivity(new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,new ComponentName(StudioActivity.this,WallpaperService.class))));return "{}";
                     case "quickEditor":runOnUiThread(()->startActivity(new Intent(StudioActivity.this,MainActivity.class)));return "{}";
                     case "pause":getSharedPreferences(WallpaperService.PREFS,MODE_PRIVATE).edit().putBoolean("paused",p.optBoolean("paused",false)).apply();return "{}";
-                    case "options":getSharedPreferences(WallpaperService.PREFS,MODE_PRIVATE).edit().putInt("fps",p.optInt("fps",24)).putInt("idleFps",p.optInt("idleFps",12)).putFloat("pointer",(float)p.optDouble("pointer",1)).putFloat("quality",(float)p.optDouble("quality",1)).putBoolean("clicks",p.optBoolean("clicks",false)).apply();return "{}";
+                    case "options":getSharedPreferences(WallpaperService.PREFS,MODE_PRIVATE).edit().putInt("fps",p.optInt("fps",24)).putInt("idleFps",p.optInt("idleFps",12)).putFloat("pointer",(float)p.optDouble("pointer",1)).putFloat("speed",(float)Math.max(.1,Math.min(2,p.optDouble("speed",1)))).putFloat("quality",(float)p.optDouble("quality",1)).putBoolean("clicks",p.optBoolean("clicks",false)).apply();return "{}";
                     case "saveFile":{
                         String data=p.getString("data");if(data.length()>128*1024*1024)throw new IllegalArgumentException("File is too large");
                         if(export!=null)throw new IllegalStateException("Finish the current export first");

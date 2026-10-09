@@ -1,5 +1,5 @@
 {
-  "title": "matrix",
+  "title": "Matrix",
   "scene": "matrix",
   "shader": "float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}\nvec4 cell(vec2 uv){\n  vec2 c=floor(uv*u_grid);\n  float speed=5.0+hash(vec2(c.x,1.0))*9.0, len=6.0+hash(vec2(c.x,2.0))*22.0;\n  float span=u_grid.y+len+hash(vec2(c.x,3.0))*50.0;\n  float d=mod(u_time*speed+hash(vec2(c.x,4.0))*span,span)-c.y;\n  float b=d>=0.0&&d<len?1.0-d/len:0.0;\n  float near=u_strength*smoothstep(0.2,0.0,length((uv-u_pointer)*vec2(u_aspect,1.0)))*step(u_idle,2.0);\n  float ring=0.0;\n  for(int i=0;i<8;i++){vec3 k=u_clicks[i];\n    ring=max(ring,smoothstep(0.025,0.0,abs(length((uv-k.xy)*vec2(u_aspect,1.0))-k.z*0.5))*max(0.0,1.0-k.z/1.6));}\n  b=max(max(b,near*0.35),ring);\n  if(b<0.03)return vec4(0.0);\n  float flip=floor(u_time*(1.5+near*25.0)+hash(c)*9.0);\n  float glyph=1.0+floor(hash(c+flip*vec2(1.7,9.2))*41.0);\n  vec3 color=d>=0.0&&d<1.0?vec3(0.8,1.0,0.8):vec3(0.0,1.0,0.27)*b;\n  return vec4(color,glyph/41.0);\n}\n",
   "charset": " ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉ0123456789ABCDEF",

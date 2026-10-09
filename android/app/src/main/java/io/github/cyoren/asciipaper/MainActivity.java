@@ -81,6 +81,8 @@ public class MainActivity extends Activity implements SharedPreferences.OnShared
         controls.addView(choice(styleLabels, styles,
                 prefs.getString(WallpaperService.STYLE, WallpaperService.DEFAULT_STYLE),
                 value -> prefs.edit().remove("project").putString(WallpaperService.STYLE, value).apply()));
+        slider(controls, "Speed (lower is calmer)", .1f, 2, .05f, prefs.getFloat("speed", 1),
+                value -> prefs.edit().putFloat("speed", value).apply());
         editor = column();
         controls.addView(editor);
         rebuildEditor();
@@ -192,7 +194,7 @@ public class MainActivity extends Activity implements SharedPreferences.OnShared
         if (key.equals(WallpaperService.WALLPAPER) || key.equals(WallpaperService.STYLE)) rebuildEditor();
     }
 
-    private void configure() { pacer.configure(prefs); renderer.pointerStrength = prefs.getFloat("pointer", 1); }
+    private void configure() { pacer.configure(prefs); renderer.pointerStrength = prefs.getFloat("pointer", 1); renderer.speed = prefs.getFloat("speed", 1); }
 
     private void shareRecipe() {
         try {

@@ -52,6 +52,7 @@ public class WallpaperService extends android.service.wallpaper.WallpaperService
             pacer = new FramePacer(WallpaperService.this, view, renderer);
             pacer.configure(getSharedPreferences(PREFS, MODE_PRIVATE));
             renderer.pointerStrength = getSharedPreferences(PREFS, MODE_PRIVATE).getFloat("pointer", 1);
+            renderer.speed = getSharedPreferences(PREFS, MODE_PRIVATE).getFloat("speed", 1);
             getSharedPreferences(PREFS, MODE_PRIVATE).registerOnSharedPreferenceChangeListener(this);
         }
 
@@ -72,7 +73,7 @@ public class WallpaperService extends android.service.wallpaper.WallpaperService
             if (pacer == null) return;
             if (key.equals("fps") || key.equals("idleFps") || key.equals("pointer") || key.equals("paused") || key.equals("clicks") || key.equals("quality")) {
                 pacer.configure(prefs);
-                renderer.pointerStrength = prefs.getFloat("pointer", 1);
+                renderer.pointerStrength = prefs.getFloat("pointer", 1); renderer.speed = prefs.getFloat("speed", 1);
                 return;
             }
             try { renderer.setLook(chosen(WallpaperService.this)); pacer.refresh(); }

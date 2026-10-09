@@ -1,5 +1,5 @@
 {
-  "title": "flow",
+  "title": "Flow",
   "scene": "flow",
   "shader": "vec4 cell(vec2 uv){return texture2D(u_data,uv);}",
   "charset": " .:-=+*#%@",

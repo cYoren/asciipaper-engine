@@ -6,7 +6,7 @@
   if (window.asciipaper?.ascii) return;
   const here = document.currentScript?.src || location.href;   // lib/ (for media.glsl)
 
-  const options = Object.assign({fps: 24, idleFps: 12, quality: 1, pointer: 1, clicks: false, paused: false},
+  const options = Object.assign({fps: 24, idleFps: 12, quality: 1, pointer: 1, speed: 1, clicks: false, paused: false},
                                 window.__asciipaperOptions);
   const pointer = {x: .5, y: .5, vx: 0, vy: 0, down: false, inside: false, moved: -1e9, clicks: []};
 
@@ -81,6 +81,7 @@
     options.idleFps = Math.max(1, Math.min(options.fps, Number(options.idleFps) || options.fps));
     options.quality = Math.max(.5, Math.min(2, Number(options.quality) || 1));
     options.pointer = Math.max(0, Math.min(2, Number(options.pointer) || 0));
+    options.speed = Math.max(.1, Math.min(2, Number(options.speed) || 1));   // calm < 1 < lively
     options.paused = !!options.paused;
     options.clicks = !!options.clicks;   // click effects (ripples) are opt-in
     const dpr = realDpr() * options.quality;
@@ -294,7 +295,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
     let previous = 0;
     function frame(now) {
       requestAnimationFrame(frame);
-      const dt = previous ? Math.min(.1, (now - previous) / 1000) : 1 / 60; previous = now;
+      const dt = (previous ? Math.min(.1, (now - previous) / 1000) : 1 / 60) * options.speed; previous = now;
       scene.time = cfg.time + (scene.time - cfg.time + dt) % cfg.period;   // wrapped: floats stay precise for weeks
       cfg.update?.(scene, dt);
       gl.useProgram(cellProg);

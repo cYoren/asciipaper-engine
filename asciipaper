@@ -21,6 +21,7 @@ Usage:
   asciipaper styles          list the looks: styles, shapes, characters, dithers, palettes, effects, warps
   asciipaper look NAME STYLE|RECIPE|file.png [key=value …]  restyle a wallpaper, e.g. look rain lego effects.crt=0.5
   asciipaper recipe NAME     print a wallpaper's look as one shareable line
+  asciipaper speed [0.1..2]  how fast every wallpaper moves (1 is normal; lower is calmer)
   asciipaper project export NAME OUT.asciipaper.json  save a portable project with shader and media
   asciipaper project import FILE [NAME]  import a project from any platform
   asciipaper text "HELLO" [NAME]  a wallpaper of big text, drawn in characters
@@ -49,7 +50,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 # gtk4-layer-shell must be linked before libwayland; for Python that means preloading it.
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 FLATPAK = os.environ.get("FLATPAK_ID") == "io.github.cyoren.asciipaper"
 PRELOAD = ("/app/lib/libgtk4-layer-shell.so.0" if FLATPAK else
            "/usr/lib/libgtk4-layer-shell.so")
@@ -78,7 +79,7 @@ PRESETS = {
 NATIVE = {"fluid": "fluid", "asciify": "fluid", "flow": "flow", "matrix": "matrix", "yin-yang": "yin-yang"}
 SERVICE = "asciipaper.service"
 
-ENGINE_DEFAULTS = {"fps": 24, "idleFps": 12, "quality": 1.0, "pointer": 1.0, "clicks": False, "renderer": "native"}
+ENGINE_DEFAULTS = {"fps": 24, "idleFps": 12, "quality": 1.0, "pointer": 1.0, "speed": 1.0, "clicks": False, "renderer": "native"}
 
 # Wallpapers must never scroll; everything else about the page is the author's.
 CSS = "html, body { margin:0; overflow:hidden !important; }"
@@ -905,7 +906,8 @@ def library():
     names = set()
     if USER_WALLPAPERS.is_dir():
         names = {p.stem for pattern in ("*.html", "*.json") for p in USER_WALLPAPERS.glob(pattern)}
-    return [*PRESETS, *builtin, *sorted(names - set(PRESETS) - set(builtin))]
+    scenes = [name for name in PRESETS if name != "asciify"]   # asciify is an alias of fluid
+    return [*scenes, *(n for n in builtin if n not in PRESETS), *sorted(names - set(PRESETS) - set(builtin))]
 
 
 def copy_builtin(name):
@@ -1332,6 +1334,19 @@ def run(target, studio=False, preview=False):
         flow.connect("child-activated", lambda _flow, child: apply(child.wallpaper))
 
         # ---- Look: the selected spec wallpaper's settings, written to its JSON; the engine redraws live.
+        # ---- Speed: the calm control, first after the gallery. Slows every wallpaper, its simulation and its media.
+        motion = Adw.PreferencesGroup(title="Speed")
+        page.add(motion)
+        speed_row = Adw.ActionRow(title="Speed", subtitle="Slower is calmer, for every wallpaper")
+        speed_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0.1, 2, 0.05)
+        speed_scale.set_size_request(240, -1); speed_scale.set_draw_value(True); speed_scale.set_digits(2)
+        speed_scale.set_valign(Gtk.Align.CENTER)
+        speed_scale.set_value(float(engine_options.get("speed", 1)))
+        speed_scale.add_mark(1, Gtk.PositionType.BOTTOM, None)
+        speed_scale.connect("value-changed", lambda s: set_engine_options({"speed": round(s.get_value(), 2)}))
+        speed_row.add_suffix(speed_scale)
+        motion.add(speed_row)
+
         look = Adw.PreferencesGroup(title="Look", description="Changes appear on your desktop as you make them.")
         page.add(look)
         look_rows, look_state = [], {"path": None, "spec": None, "defaults": {}, "loading": False, "pending": 0, "builtin": False}
@@ -1814,6 +1829,8 @@ def run(target, studio=False, preview=False):
         load_look()
         track_selection()
         win.present()
+        # Start on the gallery: otherwise GTK focuses the first text field (paste a look code) and scrolls to the bottom.
+        GLib.idle_add(lambda: (flow.grab_focus(), False)[1])
         if os.environ.get("ASCIIPAPER_STUDIO_SNAPSHOT"):   # docs and tests: save the window as a PNG, then quit
             win.set_default_size(1000, int(os.environ.get("ASCIIPAPER_STUDIO_SNAPSHOT_HEIGHT", "860")))
             def scroll():   # ASCIIPAPER_STUDIO_SNAPSHOT_SCROLL=0..1: how far down the page to capture
@@ -2105,6 +2122,16 @@ def main():
                 look[key] = value
         name = restyle(args[1], normalize_look(look))
         print(f"Restyled {name}" + ("" if name == args[1] else f" (your copy of {args[1]})"))
+    elif args[:1] == ["speed"] and len(args) <= 2:
+        options = {**ENGINE_DEFAULTS, **load_engine_options()}
+        if len(args) == 2:
+            try:
+                options["speed"] = round(max(0.1, min(2.0, float(args[1]))), 2)
+            except ValueError:
+                sys.exit("Usage: asciipaper speed [0.1..2]   (1 is normal; lower is calmer)")
+            ENGINE_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+            ENGINE_CONFIG.write_text(json.dumps(options, indent=2) + "\n")
+        print(f"Speed {options['speed']} (1 is normal; lower is calmer)")
     elif args[:1] == ["recipe"] and len(args) == 2:
         name, path = args[1], spec_file(args[1])
         if not path:

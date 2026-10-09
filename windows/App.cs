@@ -86,7 +86,7 @@ sealed class App : ApplicationContext
     public bool Paused => config.TryGetValue("paused", out var p) && p is true;
     string Options => Json.Compact(new Dictionary<string, object> {
         ["fps"] = config.Num("fps", 24), ["idleFps"] = config.Num("idleFps", 12),
-        ["quality"] = config.Num("quality", 1), ["pointer"] = config.Num("pointer", 1),
+        ["quality"] = config.Num("quality", 1), ["pointer"] = config.Num("pointer", 1), ["speed"] = config.Num("speed", 1),
         ["clicks"] = config.TryGetValue("clicks", out var c) && c is true });   // click effects are opt-in
 
     static Dictionary<string, object> LoadConfig(out bool firstRun)
@@ -184,7 +184,7 @@ sealed class App : ApplicationContext
 
     public async Task SetOptions(Dictionary<string, object> options)
     {
-        foreach (var key in new[] { "fps", "idleFps", "quality", "pointer" })
+        foreach (var key in new[] { "fps", "idleFps", "quality", "pointer", "speed" })
             if (options != null && options.ContainsKey(key)) config[key] = options.Num(key, 1);
         if (options != null && options.TryGetValue("clicks", out var clicks)) config["clicks"] = clicks is true;
         SaveConfig();

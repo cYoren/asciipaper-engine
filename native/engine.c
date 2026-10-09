@@ -91,7 +91,7 @@ static char spec_shader[4096];   // the spec's shader file, when it has one
 static const struct preset *pending;   // a reloaded spec waiting for a GL context to compile in
 static const char *snapshot;           // render once to this PNG instead of running
 
-static struct { double fps, idle_fps, quality, pointer; int clicks; } options = {24, 12, 1, 1, 0};
+static struct { double fps, idle_fps, quality, pointer, speed; int clicks; } options = {24, 12, 1, 1, 1, 0};   // speed: calm < 1 < lively
 static char engine_json[4096];
 
 static double now_seconds(void) {
@@ -102,15 +102,15 @@ static double now_seconds(void) {
 
 static double clampd(double v, double lo, double hi) { return v < lo ? lo : v > hi ? hi : v; }
 
-// engine.json is flat JSON written by the launcher; read the four numbers without a JSON library.
+// engine.json is flat JSON written by the launcher; read its numbers without a JSON library.
 static int load_options(void) {
     char text[4096] = "";
     FILE *f = fopen(engine_json, "r");
     if (f) { text[fread(text, 1, sizeof text - 1, f)] = 0; fclose(f); }
     double quality = options.quality;
-    const char *keys[] = {"\"fps\"", "\"idleFps\"", "\"quality\"", "\"pointer\""};
-    double *values[] = {&options.fps, &options.idle_fps, &options.quality, &options.pointer};
-    for (int i = 0; i < 4; i++) {
+    const char *keys[] = {"\"fps\"", "\"idleFps\"", "\"quality\"", "\"pointer\"", "\"speed\""};
+    double *values[] = {&options.fps, &options.idle_fps, &options.quality, &options.pointer, &options.speed};
+    for (int i = 0; i < 5; i++) {
         char *at = strstr(text, keys[i]);
         if (at && (at = strchr(at, ':'))) *values[i] = strtod(at + 1, NULL);
     }
@@ -118,6 +118,7 @@ static int load_options(void) {
     options.idle_fps = clampd(options.idle_fps, 1, options.fps);
     options.quality = clampd(options.quality, .5, 2);
     options.pointer = clampd(options.pointer, 0, 2);
+    options.speed = clampd(options.speed, .1, 2);
     char *clicks = strstr(text, "\"clicks\"");   // click effects (ripples) are opt-in
     options.clicks = clicks && (clicks = strchr(clicks, ':')) && !strncmp(clicks + 1 + strspn(clicks + 1, " \t"), "true", 4);
     return quality != options.quality;
@@ -367,6 +368,7 @@ static void draw(struct output *o, double now) {
     struct scene *s = &o->scene;
     make_current(o);
     float dt = o->previous ? fmin(.1, now - o->previous) : 1 / 60.f;
+    dt *= options.speed;   // wallpaper time: the whole scene, its simulation and its media slow down together
     o->previous = now;
     s->time = P->time + fmod(s->time - P->time + dt, P->period ? P->period : 2000 * M_PI);
     s->strength = options.pointer;

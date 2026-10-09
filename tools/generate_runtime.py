@@ -27,7 +27,7 @@ def legacy_resources(root):
         body = re.search(r"static const struct preset " + variable + r" = \{(.*?)\n\};", native, re.S)[1]
         shader = re.search(r'\.glsl\s*=\s*((?:"(?:[^"\\]|\\.)*"\s*)+),', body)
         shader = ''.join(ast.literal_eval(v) for v in re.findall(r'"(?:[^"\\]|\\.)*"', shader[1])) if shader else 'vec4 cell(vec2 uv){return texture2D(u_data,uv);}'
-        spec = {"title": name, "scene": name, "shader": shader}
+        spec = {"title": name.capitalize(), "scene": name, "shader": shader}
         for key in ("charset", "background", "font"):
             value = re.search(r'\.' + key + r'\s*=\s*("(?:[^"\\]|\\.)*")', body)
             if value:
