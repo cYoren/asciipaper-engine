@@ -20,6 +20,7 @@ final class PaperController: NSObject, ObservableObject, WKScriptMessageHandlerW
         config.userContentController.addScriptMessageHandler(WeakPaperBridge(self), contentWorld: .page, name: "paper")
         let view = WKWebView(frame: .zero, configuration: config)
         view.navigationDelegate = self
+        if StudioSelfTest.enabled { StudioSelfTest.watch(view) }
         view.uiDelegate = self
         #if DEBUG
         view.isInspectable = true
