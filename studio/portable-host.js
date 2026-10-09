@@ -27,7 +27,7 @@ window.portableReady = (async () => {
   const getSetting = key => {if(key in persisted)return persisted[key];try{return localStorage.getItem(key);}catch(_){return null;}};
   const setSetting = (key,value) => {persisted[key]=value;if(apple)native('saveState',persisted).catch(console.error);else try{localStorage.setItem(key,value);}catch(_){}};
   const options = {...{fps:24,idleFps:12,quality:1,pointer:1,speed:1,clicks:false}, ...JSON.parse(getSetting('options') || '{}')};
-  const state = {current:getSetting('current') || 'synthwave', paused:getSetting('paused')==='true', autostart:false, version:'1.3.0', options, library:[]};
+  const state = {current:getSetting('current') || 'synthwave', paused:getSetting('paused')==='true', autostart:false, version:'1.4.0', options, library:[]};
   const builtins = await (await fetch(new URL('catalog.json', WP))).json();
   for (const w of builtins) state.library.push({...w, own:false, url:new URL(w.url, WP).href, spec:w.spec ? new URL(w.spec, WP).href : null, thumb:new URL(`thumbnails/${w.name}.jpg`, WP).href});
   const saved = await transact('readonly', s => s.getAll());

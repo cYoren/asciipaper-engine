@@ -1,0 +1,418 @@
+[
+ {
+  "pack": "Calm",
+  "about": "Slow, quiet scenes for a desk you look at all day",
+  "items": [
+   {
+    "name": "still-ocean",
+    "title": "Still Ocean",
+    "wallpaper": "ocean",
+    "look": {
+     "pace": 0.45,
+     "interaction": {
+      "mode": "glow",
+      "strength": 0.6,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "deep-space",
+    "title": "Deep Space",
+    "wallpaper": "starfield",
+    "look": {
+     "style": "braille",
+     "pace": 0.35,
+     "interaction": {
+      "mode": "attract",
+      "strength": 0.5,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "drift",
+    "title": "Drift",
+    "wallpaper": "plasma",
+    "look": {
+     "style": "dots",
+     "palette": "pastel",
+     "pace": 0.3,
+     "interaction": {
+      "mode": "swirl",
+      "strength": 0.4,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "candlelight",
+    "title": "Candlelight",
+    "wallpaper": "fire",
+    "look": {
+     "style": "blocks",
+     "palette": "bonsai",
+     "pace": 0.5,
+     "interaction": {
+      "mode": "glow",
+      "strength": 0.5,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "slow-tide",
+    "title": "Slow Tide",
+    "wallpaper": "tunnel",
+    "look": {
+     "style": "characters",
+     "palette": "blueprint",
+     "background": "#08214f",
+     "pace": 0.25,
+     "interaction": {
+      "mode": "ripple",
+      "strength": 0.6,
+      "radius": 0.25
+     }
+    }
+   }
+  ]
+ },
+ {
+  "pack": "Retro",
+  "about": "Game consoles and home computers",
+  "items": [
+   {
+    "name": "game-boy-sunset",
+    "title": "Game Boy Sunset",
+    "wallpaper": "synthwave",
+    "look": {
+     "style": "gameboy",
+     "pace": 0.8,
+     "interaction": {
+      "mode": "ripple",
+      "strength": 1,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "c64-tunnel",
+    "title": "C64 Tunnel",
+    "wallpaper": "tunnel",
+    "look": {
+     "style": "c64",
+     "pace": 0.7,
+     "interaction": {
+      "mode": "swirl",
+      "strength": 0.7,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "pico-plasma",
+    "title": "PICO-8 Plasma",
+    "wallpaper": "plasma",
+    "look": {
+     "style": "pico8",
+     "pace": 0.6,
+     "interaction": {
+      "mode": "repel",
+      "strength": 1,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "arcade-donut",
+    "title": "Arcade Donut",
+    "wallpaper": "donut",
+    "look": {
+     "style": "crt",
+     "interaction": {
+      "mode": "magnify",
+      "strength": 0.8,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "nes-fire",
+    "title": "NES Fire",
+    "wallpaper": "fire",
+    "look": {
+     "style": "nes",
+     "pace": 0.8,
+     "interaction": {
+      "mode": "glow",
+      "strength": 1,
+      "radius": 0.25
+     }
+    }
+   }
+  ]
+ },
+ {
+  "pack": "Neon",
+  "about": "Glow, chrome and night drives",
+  "items": [
+   {
+    "name": "vaporwave-drive",
+    "title": "Vaporwave Drive",
+    "wallpaper": "synthwave",
+    "look": {
+     "style": "vaporwave",
+     "pace": 0.7,
+     "interaction": {
+      "mode": "ripple",
+      "strength": 1,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "cyber-tunnel",
+    "title": "Cyber Tunnel",
+    "wallpaper": "tunnel",
+    "look": {
+     "style": "cyberpunk",
+     "pace": 0.6,
+     "interaction": {
+      "mode": "swirl",
+      "strength": 0.8,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "neon-plasma",
+    "title": "Neon Plasma",
+    "wallpaper": "plasma",
+    "look": {
+     "style": "neon",
+     "pace": 0.5,
+     "interaction": {
+      "mode": "glow",
+      "strength": 1,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "glitch-ocean",
+    "title": "Glitch Ocean",
+    "wallpaper": "ocean",
+    "look": {
+     "style": "glitch",
+     "pace": 0.6,
+     "interaction": {
+      "mode": "repel",
+      "strength": 0.7,
+      "radius": 0.25
+     }
+    }
+   }
+  ]
+ },
+ {
+  "pack": "Print and paper",
+  "about": "Ink, halftones and old photographs",
+  "items": [
+   {
+    "name": "halftone-sea",
+    "title": "Halftone Sea",
+    "wallpaper": "ocean",
+    "look": {
+     "style": "halftone",
+     "pace": 0.6,
+     "interaction": {
+      "mode": "magnify",
+      "strength": 0.6,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "cmyk-tunnel",
+    "title": "CMYK Tunnel",
+    "wallpaper": "tunnel",
+    "look": {
+     "style": "cmyk",
+     "pace": 0.5,
+     "interaction": {
+      "mode": "swirl",
+      "strength": 0.6,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "riso-fire",
+    "title": "Riso Fire",
+    "wallpaper": "fire",
+    "look": {
+     "style": "risograph",
+     "pace": 0.7,
+     "interaction": {
+      "mode": "glow",
+      "strength": 0.6,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "blueprint-donut",
+    "title": "Blueprint Donut",
+    "wallpaper": "donut",
+    "look": {
+     "style": "blueprint",
+     "pace": 0.7,
+     "interaction": {
+      "mode": "attract",
+      "strength": 0.6,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "noir-stars",
+    "title": "Noir Stars",
+    "wallpaper": "starfield",
+    "look": {
+     "style": "noir",
+     "pace": 0.5,
+     "interaction": {
+      "mode": "glow",
+      "strength": 0.6,
+      "radius": 0.25
+     }
+    }
+   }
+  ]
+ },
+ {
+  "pack": "Hacker",
+  "about": "Code rain, terminals and heat maps",
+  "items": [
+   {
+    "name": "code-fire",
+    "title": "Code Fire",
+    "wallpaper": "fire",
+    "look": {
+     "style": "matrix-code",
+     "pace": 0.7,
+     "interaction": {
+      "mode": "glow",
+      "strength": 1,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "binary-donut",
+    "title": "Binary Donut",
+    "wallpaper": "donut",
+    "look": {
+     "style": "binary",
+     "interaction": {
+      "mode": "repel",
+      "strength": 0.8,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "thermal-plasma",
+    "title": "Thermal Plasma",
+    "wallpaper": "plasma",
+    "look": {
+     "style": "thermal",
+     "pace": 0.6,
+     "interaction": {
+      "mode": "glow",
+      "strength": 1,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "terminal-tunnel",
+    "title": "Terminal Tunnel",
+    "wallpaper": "tunnel",
+    "look": {
+     "style": "crt",
+     "palette": "matrix",
+     "pace": 0.6,
+     "interaction": {
+      "mode": "swirl",
+      "strength": 0.6,
+      "radius": 0.25
+     }
+    }
+   }
+  ]
+ },
+ {
+  "pack": "Toys",
+  "about": "Bricks, cubes and blinking lights",
+  "items": [
+   {
+    "name": "lego-sunset",
+    "title": "LEGO Sunset",
+    "wallpaper": "synthwave",
+    "look": {
+     "style": "lego",
+     "pace": 0.6,
+     "interaction": {
+      "mode": "ripple",
+      "strength": 1,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "voxel-plasma",
+    "title": "Voxel Plasma",
+    "wallpaper": "plasma",
+    "look": {
+     "style": "voxel",
+     "pace": 0.5,
+     "interaction": {
+      "mode": "swirl",
+      "strength": 0.8,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "led-fire",
+    "title": "LED Fire",
+    "wallpaper": "fire",
+    "look": {
+     "style": "led",
+     "pace": 0.8,
+     "interaction": {
+      "mode": "repel",
+      "strength": 0.7,
+      "radius": 0.25
+     }
+    }
+   },
+   {
+    "name": "disco-tunnel",
+    "title": "Disco Tunnel",
+    "wallpaper": "tunnel",
+    "look": {
+     "style": "disco",
+     "pace": 0.6,
+     "interaction": {
+      "mode": "attract",
+      "strength": 0.7,
+      "radius": 0.25
+     }
+    }
+   }
+  ]
+ }
+]

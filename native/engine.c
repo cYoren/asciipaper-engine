@@ -189,6 +189,9 @@ static int use_preset(const struct preset *p) {
     glUniform4fv(glGetUniformLocation(glyph_prog, "fxC"), 1, P->fx + 8);
     glUseProgram(cell_prog);
     glUniform1f(glGetUniformLocation(cell_prog, "u_dither"), P->dither);
+    glUniform1f(glGetUniformLocation(cell_prog, "u_interact"), P->interact);
+    glUniform1f(glGetUniformLocation(cell_prog, "u_interactStrength"), P->interact_strength);
+    glUniform1f(glGetUniformLocation(cell_prog, "u_interactRadius"), P->interact_radius);
     glUniform1f(glGetUniformLocation(cell_prog, "u_paletteSize"), P->npalette);
     if (P->npalette) glUniform3fv(glGetUniformLocation(cell_prog, "u_palette"), P->npalette, P->palette);
     glUniform1i(glGetUniformLocation(cell_prog, "u_data"), 2);
@@ -368,7 +371,7 @@ static void draw(struct output *o, double now) {
     struct scene *s = &o->scene;
     make_current(o);
     float dt = o->previous ? fmin(.1, now - o->previous) : 1 / 60.f;
-    dt *= options.speed;   // wallpaper time: the whole scene, its simulation and its media slow down together
+    dt *= options.speed * (P->pace > 0 ? P->pace : 1);   // wallpaper time: the whole scene, its simulation and its media slow down together
     o->previous = now;
     s->time = P->time + fmod(s->time - P->time + dt, P->period ? P->period : 2000 * M_PI);
     s->strength = options.pointer;

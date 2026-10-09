@@ -40,5 +40,14 @@
     "saturation",
     "hue",
     "flicker"
+  ],
+  "INTERACTIONS": [
+    "none",
+    "glow",
+    "magnify",
+    "repel",
+    "attract",
+    "swirl",
+    "ripple"
   ]
 }

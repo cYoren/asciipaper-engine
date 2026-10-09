@@ -113,6 +113,48 @@ function render() {
   queueThumbnails();
 }
 
+// ---- Discover: ready-made wallpapers in packs (wallpapers/packs.json). Picking one makes it yours, so it can be tuned.
+let PACKS = [], packShown = 0;
+async function loadPacks() {
+  try { PACKS = await (await fetch(new URL('packs.json', WP))).json(); } catch (_) { return; }
+  const tabs = $('#pack-tabs');
+  tabs.replaceChildren(...PACKS.map((p, i) => {
+    const b = Object.assign(document.createElement('button'), {className: 'tab', textContent: p.pack, role: 'tab'});
+    b.addEventListener('click', () => { packShown = i; renderPack(); });
+    return b;
+  }));
+  renderPack();
+}
+function renderPack() {
+  const pack = PACKS[packShown]; if (!pack) return;
+  [...$('#pack-tabs').children].forEach((b, i) => b.setAttribute('aria-selected', i === packShown));
+  $('#pack-about').textContent = pack.about;
+  $('#pack-grid').replaceChildren(...pack.items.map(it => {
+    const card = document.createElement('div');
+    card.className = 'card'; card.role = 'listitem'; card.tabIndex = 0; card.title = `Add ${it.title}`;
+    card.innerHTML = `<div class="thumb"></div><div class="meta"><span class="name"></span><span class="badge">Add</span></div>`;
+    card.querySelector('.thumb').style.backgroundImage = `url("${new URL(`thumbnails/packs/${it.name}.jpg`, WP)}")`;
+    card.querySelector('.name').textContent = it.title;
+    const add = () => addFromPack(it).catch(fail);
+    card.addEventListener('click', add);
+    card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); add(); } });
+    return card;
+  }));
+}
+async function addFromPack(it) {
+  const copy = await host.call('copyBuiltin', {name: it.wallpaper});
+  update(copy.state);
+  LOOKS ||= await (await fetch(new URL('lib/looks.json', WP))).json();
+  const spec = await (await fetch(item(copy.name).spec, {cache: 'no-store'})).json();
+  const {style, palette, ...rest} = it.look;
+  if (style) applyStyle(spec, style);
+  if (palette) spec.palette = typeof palette === 'string' ? LOOKS.palettes[palette] : palette;
+  Object.assign(spec, rest, {title: it.title});
+  await host.call('saveSpec', {name: copy.name, spec});
+  update(await host.call('apply', {name: copy.name}));
+  toast(desktopHost ? `${it.title} is on your desktop` : `${it.title} added`);
+}
+
 function update(next) { state = next; render(); if (document.activeElement !== speedInput) { speedInput.value = state.options?.speed ?? 1; speedInput.nextElementSibling.value = (+speedInput.value).toFixed(2); } if (editing && !item(editing)) closeDrawer(); }
 
 // ---- Thumbnails: render each wallpaper once, off to the side, and keep a snapshot.
@@ -224,50 +266,54 @@ document.addEventListener('drop', e => {
 });
 
 // ---- Customize drawer: every change is saved to the spec; the desktop and preview update live.
+// Picture controls for ported media; the rest of the controls come from lookControls() once looks.json loads.
 const CONTROLS = [
-  {group: 'Characters'},
-  {key: 'charset', label: 'Characters', type: 'select', options: CHARSETS, fallback: CHARSETS.Classic},
-  {key: 'cell', label: 'Size', type: 'range', min: 4, max: 24, step: 1, fallback: 8},
-  {key: 'weight', label: 'Weight', type: 'select', options: {Light: 300, Regular: 400, Bold: 700, Heavy: 900}, fallback: 400},
-  {key: 'fill', label: 'Glow', hint: "Each character's colour, faintly, behind it", type: 'range', min: 0, max: 1, step: .05, fallback: 0},
-  {key: 'background', label: 'Background', type: 'color', fallback: '#000000'},
-  {group: 'Colour', media: true},
-  {key: 'u.colorMode', label: 'Colours', type: 'select', options: {"The picture's own": 0, 'One colour': 1, Gradient: 2}, fallback: 0, media: true},
-  {key: 'u.tint', label: 'Tint', hint: 'Dark or grey parts, and one colour', type: 'color', fallback: '#e8b900', media: true},
-  {key: 'u.tint2', label: 'Second colour', hint: "The gradient's bright end", type: 'color', fallback: '#ff3355', media: true},
-  {key: 'u.vivid', label: 'Colour lift', type: 'range', min: 0, max: 1, step: .05, fallback: .5, media: true},
-  {key: 'u.contrast', label: 'Contrast', type: 'range', min: .2, max: 4, step: .05, fallback: 1, media: true},
-  {key: 'u.brightness', label: 'Brightness', type: 'range', min: -1, max: 1, step: .05, fallback: 0, media: true},
-  {key: 'u.invert', label: 'Invert', hint: 'Dense characters for the dark parts', type: 'switch', fallback: 0, media: true},
-  {group: 'Picture', media: true},
-  {key: 'u.fit', label: 'Fill the screen', hint: 'Crop instead of showing everything', type: 'switch', fallback: 0, media: true},
-  {key: 'u.backdrop', label: 'Backdrop', hint: "A dim copy where the picture doesn't reach", type: 'range', min: 0, max: 1, step: .05, fallback: .3, media: true},
-  {key: 'u.zoom', label: 'Zoom', type: 'range', min: .5, max: 3, step: .05, fallback: 1, media: true},
-  {key: 'u.speed', label: 'Playback speed', type: 'range', min: .1, max: 3, step: .05, fallback: 1, media: true},
-  {group: 'Mouse effects', media: true},
-  {key: 'u.lens', label: 'Hover lens', type: 'range', min: 0, max: 2, step: .1, fallback: 1, media: true},
-  {key: 'u.ripple', label: 'Click ripple', type: 'range', min: 0, max: 2, step: .1, fallback: 1, media: true},
+  {group: 'Characters', more: true},
+  {key: 'charset', label: 'Characters', type: 'select', options: CHARSETS, fallback: CHARSETS.Classic, more: true},
+  {key: 'weight', label: 'Weight', type: 'select', options: {Light: 300, Regular: 400, Bold: 700, Heavy: 900}, fallback: 400, more: true},
+  {key: 'fill', label: 'Glow', hint: "Each character's colour, faintly, behind it", type: 'range', min: 0, max: 1, step: .05, fallback: 0, more: true},
+  {key: 'background', label: 'Background', type: 'color', fallback: '#000000', more: true},
+  {group: 'Picture', media: true, more: true},
+  {key: 'u.tint', label: 'Tint', hint: 'Dark or grey parts, and one colour', type: 'color', fallback: '#e8b900', media: true, more: true},
+  {key: 'u.tint2', label: 'Second colour', hint: "The gradient's bright end", type: 'color', fallback: '#ff3355', media: true, more: true},
+  {key: 'u.vivid', label: 'Colour lift', type: 'range', min: 0, max: 1, step: .05, fallback: .5, media: true, more: true},
+  {key: 'u.contrast', label: 'Contrast', type: 'range', min: .2, max: 4, step: .05, fallback: 1, media: true, more: true},
+  {key: 'u.invert', label: 'Invert', hint: 'Dense characters for the dark parts', type: 'switch', fallback: 0, media: true, more: true},
+  {key: 'u.fit', label: 'Fill the screen', hint: 'Crop instead of showing everything', type: 'switch', fallback: 0, media: true, more: true},
+  {key: 'u.backdrop', label: 'Backdrop', hint: "A dim copy where the picture doesn't reach", type: 'range', min: 0, max: 1, step: .05, fallback: .3, media: true, more: true},
+  {key: 'u.zoom', label: 'Zoom', type: 'range', min: .5, max: 3, step: .05, fallback: 1, media: true, more: true},
+  {key: 'u.ripple', label: 'Click ripple', type: 'range', min: 0, max: 2, step: .1, fallback: 1, media: true, more: true},
 ];
 
 // The looks the Linux app has too (styles, shapes, palettes, dithers, effects, warps), from one shared file.
 let LOOKS = null;
 const NAMES = {crt: 'CRT curve', rgbSplit: 'RGB split', cmyk: 'CMYK', led: 'LED', lego: 'LEGO', c64: 'C64', nes: 'NES', cga: 'CGA', pico8: 'PICO-8'};
 const title = k => NAMES[k] || k[0].toUpperCase() + k.slice(1).replace(/([A-Z])/g, ' $1').toLowerCase();
+const interactionOf = spec => typeof spec.interaction === 'string' ? {mode: spec.interaction} : {...spec.interaction};
 function lookControls() {
   const L = LOOKS, pick = names => Object.fromEntries(names.map(n => [title(n), n]));
   const styles = {Custom: null};
   for (const name of Object.keys(L.styles)) styles[title(name)] = name;
+  // The few that matter first; everything else waits under "More options".
   return [
-    {group: 'Look'},
-    {key: 'style', label: 'Style', hint: 'A whole look at once; fine-tune it below', type: 'select', options: styles, fallback: null},
-    {key: 'shape', label: 'Shape', hint: 'Characters, or pixels, tiles, dots, LEGO…', type: 'select', options: pick(L.shapes), fallback: 'glyph'},
-    {key: 'palette', label: 'Palette', type: 'select', fallback: [],
-     options: {'Own colours': [], ...Object.fromEntries(Object.entries(L.palettes).map(([k, v]) => [title(k), v]))}},
-    {key: 'dither', label: 'Dither', type: 'select', options: pick(L.dithers), fallback: 'none'},
-    {key: 'u.warp', label: 'Warp', type: 'select', options: Object.fromEntries(L.warps.map((w, i) => [title(w), i])), fallback: 0, media: true},
-    {key: 'u.warpAmount', label: 'Warp amount', type: 'range', min: -1, max: 1, step: .05, fallback: .5, media: true},
-    {group: 'Effects'},
-    ...Object.entries(L.effects).map(([k, [min, max]]) => ({key: 'fx.' + k, label: title(k), type: 'range', min, max, step: .05, fallback: 0})),
+    {key: 'style', label: 'Style', hint: 'A whole look in one click', type: 'select', options: styles, fallback: null},
+    {key: 'i.mode', label: 'Interaction', hint: 'How it answers your pointer', type: 'select', fallback: 'none',
+     options: {None: 'none', 'Glow that follows': 'glow', Magnify: 'magnify', 'Push away': 'repel', 'Pull in': 'attract', Swirl: 'swirl', Ripple: 'ripple'}},
+    {key: 'i.strength', label: 'Interaction strength', type: 'range', min: 0, max: 2, step: .05, fallback: 1},
+    {key: 'palette', label: 'Colours', type: 'select', fallback: [],
+     options: {'Its own': [], ...Object.fromEntries(Object.entries(L.palettes).map(([k, v]) => [title(k), v]))}},
+    {key: 'u.colorMode', label: 'Picture colours', type: 'select', options: {"The picture's own": 0, 'One colour': 1, Gradient: 2}, fallback: 0, media: true},
+    {key: 'u.brightness', label: 'Brightness', type: 'range', min: -1, max: 1, step: .05, fallback: 0, media: true},
+    {key: 'cell', label: 'Cell size', hint: 'Smaller shows more detail', type: 'range', min: 4, max: 24, step: 1, fallback: 8},
+    {group: 'Shape and texture', more: true},
+    {key: 'shape', label: 'Shape', hint: 'Characters, or pixels, tiles, dots, LEGO…', type: 'select', options: pick(L.shapes), fallback: 'glyph', more: true},
+    {key: 'dither', label: 'Dither', type: 'select', options: pick(L.dithers), fallback: 'none', more: true},
+    {key: 'i.radius', label: 'Interaction reach', type: 'range', min: .05, max: .6, step: .01, fallback: .25, more: true},
+    {key: 'u.warp', label: 'Warp', type: 'select', options: Object.fromEntries(L.warps.map((w, i) => [title(w), i])), fallback: 0, media: true, more: true},
+    {key: 'u.warpAmount', label: 'Warp amount', type: 'range', min: -1, max: 1, step: .05, fallback: .5, media: true, more: true},
+    {key: 'u.speed', label: 'Video speed', type: 'range', min: .1, max: 3, step: .05, fallback: 1, media: true, more: true},
+    {group: 'Effects', more: true},
+    ...Object.entries(L.effects).map(([k, [min, max]]) => ({key: 'fx.' + k, label: title(k), type: 'range', min, max, step: .05, fallback: 0, more: true})),
   ];
 }
 // A style resets shape, dither, palette and effects, then sets its own (as `asciipaper look NAME STYLE` does).
@@ -305,7 +351,8 @@ async function openDrawer(name) {
   preview.src = w.url;
   LOOKS ||= await (await fetch(new URL('lib/looks.json', WP))).json();
   const get = c => c.key.startsWith('u.') ? (spec.uniforms?.[c.key.slice(2)] ?? defaults[c.key.slice(2)] ?? c.fallback)
-    : c.key.startsWith('fx.') ? (spec.effects?.[c.key.slice(3)] ?? c.fallback) : (spec[c.key] ?? c.fallback);
+    : c.key.startsWith('fx.') ? (spec.effects?.[c.key.slice(3)] ?? c.fallback)
+    : c.key.startsWith('i.') ? (interactionOf(spec)[c.key.slice(2)] ?? c.fallback) : (spec[c.key] ?? c.fallback);
   const set = async (c, value) => {
     if (c.key === 'style') {
       if (!value) return;
@@ -313,8 +360,16 @@ async function openDrawer(name) {
       await host.call('saveSpec', {name, spec}).catch(fail);
       return openDrawer(name);
     }
+    if (c.key === 'shape' && ((spec.shape || 'glyph') === 'glyph') !== (value === 'glyph')) {
+      // glyphs want tall, small cells; grid shapes square ones (as fit_shape in the Linux app)
+      Object.assign(spec, value === 'glyph' ? {aspect: .55, cell: 8} : {aspect: 1, cell: 12});
+      spec.shape = value;
+      await host.call('saveSpec', {name, spec}).catch(fail);
+      return openDrawer(name);   // the size control follows
+    }
     if (c.key.startsWith('u.')) (spec.uniforms ||= {})[c.key.slice(2)] = value;
     else if (c.key.startsWith('fx.')) (spec.effects ||= {})[c.key.slice(3)] = value;
+    else if (c.key.startsWith('i.')) spec.interaction = {...interactionOf(spec), [c.key.slice(2)]: value};
     else spec[c.key] = value;
     clearTimeout(saveTimer);
     savePending = async () => {
@@ -330,8 +385,8 @@ async function openDrawer(name) {
   const media = !!(spec.media || spec.shader === 'media');
   const charsets = Object.fromEntries(Object.entries(LOOKS.charsets).map(([k, v]) => [title(k), v]));
   const controls = [...lookControls(), ...CONTROLS.map(c => c.key === 'charset' ? {...c, options: charsets} : c)];
-  $('#controls').replaceChildren(...controls.filter(c => media || !c.media).map(c => {
-    if (c.group) return Object.assign(document.createElement('div'), {className: 'group', textContent: c.group});
+  const rows = controls.filter(c => media || !c.media).map(c => {
+    if (c.group) return Object.assign(document.createElement('div'), {className: 'group', textContent: c.group, more: c.more});
     const row = document.createElement('label');
     row.innerHTML = `<span></span>`;
     row.firstChild.textContent = c.label;
@@ -363,8 +418,13 @@ async function openDrawer(name) {
       select.addEventListener('change', () => set(c, JSON.parse(select.value)));
       row.append(select);
     }
+    row.more = c.more;
     return row;
-  }));
+  });
+  // The basics stay in view; the rest folds under "More options" so the drawer never feels like a cockpit.
+  const more = Object.assign(document.createElement('details'), {className: 'more'});
+  more.append(Object.assign(document.createElement('summary'), {textContent: 'More options'}), ...rows.filter(r => r.more));
+  $('#controls').replaceChildren(...rows.filter(r => !r.more), more);
   $('#drawer').classList.add('open'); $('#drawer').setAttribute('aria-hidden', 'false');
   syncPreviews();
 }
@@ -489,6 +549,7 @@ for (const id of ['#now-preview', '#drawer-preview'])
 $('#open-folder').addEventListener('click', () => host.call('openFolder').catch(fail));
 
 host.on('state', update);
+loadPacks();
 host.call('state').then(update).catch(fail);
 
 // Only the preview the user can see gets animation time. Parent visibility is

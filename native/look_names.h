@@ -3,3 +3,4 @@
 static const char *const SHAPES[] = {"glyph", "pixel", "mosaic", "dots", "led", "lego", "cross", "diamond", "lines", "diagonal", "voxel", "disco", "cmyk", NULL};
 static const char *const DITHERS[] = {"none", "bayer2", "bayer4", "bayer8", "bayer16", "halftone", "radial", "linesH", "linesV", "linesD", "whiteNoise", "blueNoise", NULL};
 static const char *const FX[] = {"vignette", "scanlines", "crt", "rgbSplit", "grain", "glitch", "bloom", "dust", "saturation", "hue", "flicker", NULL};
+static const char *const INTERACTIONS[] = {"none", "glow", "magnify", "repel", "attract", "swirl", "ripple", NULL};

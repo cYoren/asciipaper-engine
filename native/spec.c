@@ -195,6 +195,16 @@ const struct preset *spec_load(const char *path, const char *lib, char *shader_f
         break;
     }
     s->preset.dither = named(j, "dither", DITHERS);
+    s->preset.pace = fmin(2, fmax(.05, json_number(j, "pace", 1)));
+    const struct json *interaction = json_get(j, "interaction");   // "swirl" or {"mode": "swirl", "strength": 1, "radius": .25}
+    if (interaction && interaction->type == JSON_OBJECT) {
+        s->preset.interact = named(interaction, "mode", INTERACTIONS);
+        s->preset.interact_strength = json_number(interaction, "strength", 1);
+        s->preset.interact_radius = json_number(interaction, "radius", .25);
+    } else {
+        s->preset.interact = named(j, "interaction", INTERACTIONS);
+        s->preset.interact_strength = 1; s->preset.interact_radius = .25;
+    }
     const struct json *palette = json_get(j, "palette");
     for (int i = 0; palette && palette->type == JSON_ARRAY && i < palette->count && s->preset.npalette < 16; i++)
         if (palette->items[i]->type == JSON_STRING && hex_color(palette->items[i]->string, s->preset.palette + s->preset.npalette * 3))

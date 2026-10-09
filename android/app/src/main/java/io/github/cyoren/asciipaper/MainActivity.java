@@ -126,6 +126,9 @@ public class MainActivity extends Activity implements SharedPreferences.OnShared
         try {
             JSONObject spec = WallpaperService.chosenSpec(this);
             editor.addView(label("Appearance · saved automatically for this wallpaper and style"));
+            Object how = spec.opt("interaction");
+            String mode = how instanceof JSONObject ? ((JSONObject) how).optString("mode", "none") : how == null ? "none" : how.toString();
+            selectField("Interaction (how it answers your touch)", "interaction", Look.names(catalog.getJSONArray("interactions")), mode);
             selectField("Shape", "shape", Look.names(catalog.getJSONArray("shapes")), spec.optString("shape", "glyph"));
             selectField("Dither", "dither", Look.names(catalog.getJSONArray("dithers")), spec.optString("dither", "none"));
             List<String> charsets = Look.keys(catalog.getJSONObject("charsets"));
@@ -183,12 +186,20 @@ public class MainActivity extends Activity implements SharedPreferences.OnShared
                 effects.put(key.substring(3), value);
                 edits.put("effects", effects);
             } else edits.put(key, value);
+            boolean crossed = false;
+            if (key.equals("shape") && WallpaperService.chosenSpec(this).optString("shape", "glyph").equals("glyph") != value.equals("glyph")) {
+                // glyphs want tall, small cells; grid shapes square ones (as fit_shape in the Linux app)
+                boolean glyph = value.equals("glyph");
+                edits.put("aspect", glyph ? .55 : 1).put("cell", glyph ? 8 : 12);
+                crossed = true;
+            }
             prefs.edit().remove("project").putString(storage, edits.toString()).apply();
+            if (crossed) rebuildEditor();   // the size control follows
         } catch (Exception e) { error(e); }
     }
 
     @Override public void onSharedPreferenceChanged(SharedPreferences p, String key) {
-        if (key.equals("fps") || key.equals("idleFps") || key.equals("pointer") || key.equals("quality") || key.equals("paused") || key.equals("clicks")) { configure(); return; }
+        if (key.equals("fps") || key.equals("idleFps") || key.equals("pointer") || key.equals("speed") || key.equals("quality") || key.equals("paused") || key.equals("clicks")) { configure(); return; }
         try { renderer.setLook(WallpaperService.chosen(this)); pacer.refresh(); }
         catch (Exception e) { error(e); }
         if (key.equals(WallpaperService.WALLPAPER) || key.equals(WallpaperService.STYLE)) rebuildEditor();

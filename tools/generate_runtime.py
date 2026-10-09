@@ -78,7 +78,7 @@ def shaders(source):
 def resources(root=ROOT):
     source = (root / "wallpapers/lib/asciipaper.js").read_text()
     catalog = json.loads((root / "wallpapers/lib/looks.json").read_text())
-    tables = {"SHAPES": catalog["shapes"], "DITHERS": catalog["dithers"], "FX": list(catalog["effects"])}
+    tables = {"SHAPES": catalog["shapes"], "DITHERS": catalog["dithers"], "FX": list(catalog["effects"]), "INTERACTIONS": catalog["interactions"]}
     for name, values in tables.items():
         match = re.search(r"\bconst " + name + r" = (\[.*?\]);", source)
         if not match or [v for v in ast.literal_eval(match[1]) if v] != values:

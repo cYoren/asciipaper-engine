@@ -627,5 +627,14 @@
     "rgbSplit": 1
    }
   }
- }
+ },
+ "interactions": [
+  "none",
+  "glow",
+  "magnify",
+  "repel",
+  "attract",
+  "swirl",
+  "ripple"
+ ]
 }

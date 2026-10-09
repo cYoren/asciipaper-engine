@@ -12,7 +12,7 @@
     <RootNamespace>Asciipaper</RootNamespace>
     <ApplicationIcon>asciipaper.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.3.0</Version>
+    <Version>1.4.0</Version>
     <Product>asciipaper</Product>
     <Company>cYoren</Company>
     <Description>Live, interactive ASCII wallpapers</Description>

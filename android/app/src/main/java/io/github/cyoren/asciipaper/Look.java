@@ -17,7 +17,7 @@ import org.json.JSONObject;
 // wallpapers/lib/looks.json applied, as `asciipaper look NAME STYLE` does on Linux.
 final class Look {
     String glsl, scene, media, charset = " .:-=+*#%@", font;
-    float cell = 8, aspect = .6f, maxCells = 40000, fill, time, period = (float) (2000 * Math.PI), shape, dither;
+    float cell = 8, aspect = .6f, maxCells = 40000, fill, time, period = (float) (2000 * Math.PI), shape, dither, interact, interactStrength = 1, interactRadius = .25f, pace = 1;
     int weight;
     float[] background = {.03f, .035f, .035f}, palette = new float[0], effects = new float[12];
     JSONObject uniforms = new JSONObject();
@@ -156,6 +156,12 @@ final class Look {
         look.background = color(spec.optString("background", "#000000"));
         look.shape = named(spec.opt("shape"), names(looks.getJSONArray("shapes")));
         look.dither = named(spec.opt("dither"), names(looks.getJSONArray("dithers")));
+        look.pace = (float) Math.max(.05, Math.min(2, spec.optDouble("pace", 1)));
+        Object interaction = spec.opt("interaction");   // "swirl" or {"mode": "swirl", "strength": 1, "radius": .25}
+        JSONObject how = interaction instanceof JSONObject ? (JSONObject) interaction : new JSONObject().put("mode", interaction == null ? "none" : interaction);
+        look.interact = named(how.opt("mode"), names(looks.getJSONArray("interactions")));
+        look.interactStrength = (float) how.optDouble("strength", 1);
+        look.interactRadius = (float) how.optDouble("radius", .25);
         Object palette = spec.opt("palette");
         if (palette instanceof String) palette = looks.getJSONObject("palettes").optJSONArray((String) palette);
         if (palette instanceof JSONArray) {

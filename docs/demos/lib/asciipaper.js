@@ -107,7 +107,15 @@ uniform sampler2D u_data;
   const QUAD = 'attribute vec2 p;varying vec2 v_uv;void main(){v_uv=p;gl_Position=vec4(p*2.0-1.0,0,1);}';
   // Pass 1 also applies the look's `dither` (an ordered pattern over the cells) and `palette` (nearest colour).
   const CELL_MAIN = `
-uniform sampler2D u_lut;uniform float u_glyphs,u_useLut,u_dither,u_paletteSize;uniform vec3 u_palette[16];
+uniform sampler2D u_lut;uniform float u_glyphs,u_useLut,u_dither,u_paletteSize,u_interact,u_interactStrength,u_interactRadius;uniform vec3 u_palette[16];
+float ap_reach;
+vec2 ap_interact(vec2 uv){ap_reach=0.0;if(u_interact<0.5)return uv;
+vec2 k=vec2(u_aspect,1.0),q=(uv-u_pointer)*k,dir=q/max(length(q),1e-4)/k;float d=length(q),r=max(u_interactRadius,0.02);
+float on=u_strength*u_interactStrength*clamp(1.5-u_idle*0.5,0.0,1.0);ap_reach=on*smoothstep(r,0.0,d);
+if(u_interact<1.5)return uv;if(u_interact<2.5)return u_pointer+(uv-u_pointer)*(1.0-0.5*ap_reach);
+if(u_interact<3.5)return uv-dir*ap_reach*r*0.35;if(u_interact<4.5)return uv+dir*ap_reach*r*0.35;
+if(u_interact<5.5){float t=ap_reach*2.5;return u_pointer+mat2(cos(t),sin(t),-sin(t),cos(t))*q/k;}
+return uv+dir*sin(d*60.0-u_time*6.0)*0.012*on*smoothstep(r*2.0,0.0,d);}
 float ap_b2(vec2 a){a=floor(a);return fract(a.x*0.5+a.y*a.y*0.75);}
 float ap_b4(vec2 a){return ap_b2(0.5*a)*0.25+ap_b2(a);}
 float ap_b8(vec2 a){return ap_b4(0.5*a)*0.25+ap_b2(a);}
@@ -117,7 +125,8 @@ if(m<5.5)return clamp(length(fract(a/4.0)-0.5)*1.41,0.0,1.0);if(m<6.5)return fra
 if(m<7.5)return fract(a.y/4.0);if(m<8.5)return fract(a.x/4.0);if(m<9.5)return fract((a.x+a.y)/4.0);
 if(m<10.5)return fract(sin(dot(floor(a),vec2(12.9898,78.233)))*43758.5453);
 return fract(52.9829189*fract(dot(floor(a),vec2(0.06711056,0.00583715))));}
-void main(){vec4 c=cell(vec2(v_uv.x,1.0-v_uv.y));float l=clamp(c.a,0.0,1.0);vec3 rgb=clamp(c.rgb,0.0,1.0);
+void main(){vec4 c=cell(ap_interact(vec2(v_uv.x,1.0-v_uv.y)));float l=clamp(c.a,0.0,1.0);vec3 rgb=clamp(c.rgb,0.0,1.0);
+if(u_interact>0.5&&u_interact<1.5){l=clamp(l+ap_reach*0.45,0.0,1.0);rgb=clamp(rgb+ap_reach*0.25,0.0,1.0);}
 if(u_dither>0.5){float t=ap_dither(gl_FragCoord.xy)-0.5;if(l>0.0)l=clamp(l+t/max(u_glyphs-1.0,1.0),0.0,1.0);
 if(u_paletteSize>0.5)rgb=clamp(rgb+t*pow(max(u_paletteSize-1.0,1.0),-0.333),0.0,1.0);}
 if(u_paletteSize>0.5){vec3 best=u_palette[0];float bd=1e9;for(int i=0;i<16;i++){if(float(i)>=u_paletteSize)break;
@@ -176,6 +185,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
   // Look names, by index: the same tables as native/spec.c. A config may also give the index.
   const SHAPES = ['glyph', 'pixel', 'mosaic', 'dots', 'led', 'lego', 'cross', 'diamond', 'lines', 'diagonal', 'voxel', 'disco', 'cmyk'];
   const DITHERS = ['none', 'bayer2', 'bayer4', 'bayer8', 'bayer16', 'halftone', 'radial', 'linesH', 'linesV', 'linesD', 'whiteNoise', 'blueNoise'];
+  const INTERACTIONS = ['none', 'glow', 'magnify', 'repel', 'attract', 'swirl', 'ripple'];
   const FX = ['vignette', 'scanlines', 'crt', 'rgbSplit', 'grain', 'glitch', 'bloom', 'dust', 'saturation', 'hue', 'flicker', ''];
   const named = (v, names) => typeof v === 'number' ? v : Math.max(0, names.indexOf(v));
   const rgb = v => (v.match(/[0-9a-f]{2}/gi) || ['00', '00', '00']).map(h => parseInt(h, 16) / 255);
@@ -219,6 +229,10 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
     ['fxA', 'fxB', 'fxC'].forEach((k, i) => gl.uniform4fv(glyphProg.u(k), fx.slice(i * 4, i * 4 + 4)));
     gl.useProgram(cellProg);
     const palette = (cfg.palette || []).slice(0, 16).map(rgb);
+    // interaction: how the wallpaper answers the pointer, on top of whatever the scene does itself
+    const interaction = typeof cfg.interaction === 'string' ? {mode: cfg.interaction} : cfg.interaction || {};
+    gl.uniform1f(cellProg.u('u_interact'), named(interaction.mode || 0, INTERACTIONS));
+    gl.uniform1f(cellProg.u('u_interactStrength'), interaction.strength ?? 1); gl.uniform1f(cellProg.u('u_interactRadius'), interaction.radius ?? .25);
     gl.uniform1f(cellProg.u('u_dither'), named(cfg.dither || 0, DITHERS)); gl.uniform1f(cellProg.u('u_paletteSize'), palette.length);
     if (palette.length) gl.uniform3fv(cellProg.u('u_palette'), palette.flat());
     gl.uniform1i(cellProg.u('u_data'), 2); gl.uniform1i(cellProg.u('u_lut'), 3);
@@ -295,7 +309,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
     let previous = 0;
     function frame(now) {
       requestAnimationFrame(frame);
-      const dt = (previous ? Math.min(.1, (now - previous) / 1000) : 1 / 60) * options.speed; previous = now;
+      const dt = (previous ? Math.min(.1, (now - previous) / 1000) : 1 / 60) * options.speed * (cfg.pace || 1); previous = now;
       scene.time = cfg.time + (scene.time - cfg.time + dt) % cfg.period;   // wrapped: floats stay precise for weeks
       cfg.update?.(scene, dt);
       gl.useProgram(cellProg);
@@ -325,7 +339,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
   // shader inlined). The media, if any, is the page's #asciipaper-media <img> or <video>; each
   // frame is drawn small and handed to the shader as `media`, like asciipaper-engine does.
   const color = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? [1, 3, 5].map(i => parseInt(v.slice(i, i + 2), 16) / 255) : v;
-  const LOOK = ['charset', 'cell', 'aspect', 'maxCells', 'background', 'font', 'time', 'period', 'fill', 'weight', 'shape', 'dither', 'palette', 'effects'];
+  const LOOK = ['charset', 'cell', 'aspect', 'maxCells', 'background', 'font', 'time', 'period', 'fill', 'weight', 'shape', 'dither', 'palette', 'effects', 'interaction', 'pace'];
   let live = null;   // the running spec: {uniforms, look} for patch()
 
   function spec(s) {

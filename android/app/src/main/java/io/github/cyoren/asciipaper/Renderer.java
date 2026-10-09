@@ -113,7 +113,7 @@ final class Renderer implements GLSurfaceView.Renderer {
         if (!ready) { GLES20.glClearColor(0, 0, 0, 1); GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT); return; }
         if(renderedQuality!=quality)layoutOutput();
         long now = SystemClock.uptimeMillis();
-        float dt = (previous == 0 || resetClock ? 0 : Math.min(1, (now - previous) / 1000f)) * speed;
+        float dt = (previous == 0 || resetClock ? 0 : Math.min(1, (now - previous) / 1000f)) * speed * look.pace;
         resetClock = false;
         previous = now;
         time = look.time + (time - look.time + dt) % look.period;
@@ -191,6 +191,7 @@ final class Renderer implements GLSurfaceView.Renderer {
         GLES20.glUseProgram(cellProg);
         GLES20.glUniform1i(loc(cellProg, "u_data"), 2); GLES20.glUniform1i(loc(cellProg, "u_lut"), 3);
         u(cellProg, "u_glyphs", glyphs); u(cellProg, "u_useLut", 0);
+        u(cellProg, "u_interact", look.interact); u(cellProg, "u_interactStrength", look.interactStrength); u(cellProg, "u_interactRadius", look.interactRadius);
         u(cellProg, "u_dither", look.dither); u(cellProg, "u_paletteSize", look.palette.length / 3f);
         if (look.palette.length > 0) GLES20.glUniform3fv(loc(cellProg, "u_palette"), look.palette.length / 3, look.palette, 0);
         if (!look.scene.isEmpty()) nativeScene = NativeScene.create(look.scene, cellProg, Math.round(W), Math.round(H), cols, rows);

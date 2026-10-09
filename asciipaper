@@ -21,6 +21,7 @@ Usage:
   asciipaper styles          list the looks: styles, shapes, characters, dithers, palettes, effects, warps
   asciipaper look NAME STYLE|RECIPE|file.png [key=value …]  restyle a wallpaper, e.g. look rain lego effects.crt=0.5
   asciipaper recipe NAME     print a wallpaper's look as one shareable line
+  asciipaper packs           ready-made wallpapers, by category; asciipaper add NAME puts one on your desktop
   asciipaper speed [0.1..2]  how fast every wallpaper moves (1 is normal; lower is calmer)
   asciipaper project export NAME OUT.asciipaper.json  save a portable project with shader and media
   asciipaper project import FILE [NAME]  import a project from any platform
@@ -50,7 +51,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 # gtk4-layer-shell must be linked before libwayland; for Python that means preloading it.
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 FLATPAK = os.environ.get("FLATPAK_ID") == "io.github.cyoren.asciipaper"
 PRELOAD = ("/app/lib/libgtk4-layer-shell.so.0" if FLATPAK else
            "/usr/lib/libgtk4-layer-shell.so")
@@ -229,10 +230,11 @@ NAME_RE = r"[A-Za-z0-9][A-Za-z0-9 _-]{0,47}"
 # A style resets shape, dither, palette and effects, then sets its own; its `uniforms` only matter to ported media.
 LOOKS = json.loads((LOCAL / "lib/looks.json").read_text(encoding="utf-8"))
 CHARSETS, SHAPES, DITHERS, WARPS, PALETTES = (LOOKS[k] for k in ("charsets", "shapes", "dithers", "warps", "palettes"))
+INTERACTIONS = LOOKS["interactions"]   # how a wallpaper answers the pointer: none, glow, magnify, repel, attract, swirl, ripple
 DIFFUSION = set(LOOKS["diffusion"])   # error diffusion boils on a moving picture: blue noise instead
 EFFECTS = {k: tuple(v) for k, v in LOOKS["effects"].items()}
 STYLES = {name: (look.pop("about"), look) for name, look in LOOKS["styles"].items()}
-LOOK_KEYS = ("charset", "cell", "aspect", "maxCells", "background", "font", "fill", "weight", "shape", "dither", "palette",
+LOOK_KEYS = ("charset", "cell", "aspect", "maxCells", "background", "font", "fill", "weight", "shape", "dither", "palette", "interaction", "pace",
              "effects", "uniforms")
 RECIPE = "asciipaper:v1:"
 
@@ -266,6 +268,17 @@ def normalize_look(look):
     elif palette is not None and not (isinstance(palette, list) and len(palette) <= 16 and
                                       all(isinstance(c, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", c) for c in palette)):
         raise ValueError('palette is up to 16 "#rrggbb" colours')
+    interaction = out.get("interaction")
+    if isinstance(interaction, str):
+        interaction = {"mode": interaction}
+    if interaction is not None:
+        if not isinstance(interaction, dict) or interaction.get("mode", "none") not in INTERACTIONS or set(interaction) - {"mode", "strength", "radius"}:
+            raise ValueError(f"interaction is a mode ({', '.join(INTERACTIONS)}) or {{mode, strength 0..2, radius 0.05..0.6}}")
+        out["interaction"] = {"mode": interaction.get("mode", "none"),
+                              "strength": max(0.0, min(2.0, float(interaction.get("strength", 1)))),
+                              "radius": max(0.05, min(0.6, float(interaction.get("radius", 0.25))))}
+    if "pace" in out:
+        out["pace"] = round(max(0.05, min(2.0, float(out["pace"]))), 2)
     effects = out.get("effects")
     if effects is not None:
         if not isinstance(effects, dict) or set(effects) - set(EFFECTS):
@@ -284,11 +297,20 @@ def normalize_look(look):
     return out
 
 
+def fit_shape(spec, shape):
+    """Glyphs want tall, small cells; grid shapes (pixels, LEGO…) square, larger ones. Crossing between the two
+    resets the cells, or a glyph look inherits LEGO's 16 px squares and looks zoomed in."""
+    if (spec.get("shape", "glyph") == "glyph") != (shape == "glyph"):
+        spec["aspect"], spec["cell"] = (0.55, 8) if shape == "glyph" else (1, 12)
+
+
 def apply_look(spec, look):
     """Merge a normalized look into a spec: uniforms merge, effects merge unless it's a whole new look
     (a style or recipe), the rest replaces. Empty keys are dropped."""
     look = dict(look)
     reset = look.pop("_reset", False)
+    if "shape" in look and "aspect" not in look:   # a bare shape change (a style brings its own cells)
+        fit_shape(spec, look["shape"])
     before = STYLES.get(spec.get("style"), ("", {}))[1] if reset else {}
     for key in set(before.get("uniforms", {})) - set(look.get("uniforms", {})):   # undo what the last style set
         spec.get("uniforms", {}).pop(key, None)
@@ -382,6 +404,29 @@ def restyle(name, look):
     path.write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     spec_html(path)
     return name
+
+
+PACKS = json.loads((LOCAL / "packs.json").read_text(encoding="utf-8"))
+
+
+def pack_item(name):
+    for pack in PACKS:
+        for item in pack["items"]:
+            if item["name"] == name:
+                return item
+    raise ValueError(f"no pack wallpaper {name!r}; see asciipaper packs")
+
+
+def add_from_pack(name):
+    """A ready-made wallpaper from a pack, as the user's own (so it can be tuned); returns its name."""
+    item = pack_item(name)
+    copy = copy_builtin(item["wallpaper"], stem=item["name"])
+    path = USER_WALLPAPERS / f"{copy}.json"
+    spec = apply_look(read_spec(path), normalize_look({**item["look"]}))
+    spec["title"] = item["title"]
+    path.write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    spec_html(path)
+    return copy
 
 
 def import_recipe(code, name=None):
@@ -575,7 +620,7 @@ def spec_html(path):
     spec = read_spec(path)
     glsl, defaults = spec_shader(spec, path.parent)
     runtime = {key: spec[key] for key in ("scene", "charset", "cell", "aspect", "maxCells", "background", "font", "time", "period", "fill", "weight",
-                                                   "shape", "dither", "palette", "effects")
+                                                   "shape", "dither", "palette", "effects", "interaction", "pace")
                if key in spec}
     runtime.update(glsl=glsl, uniforms={**defaults, **spec.get("uniforms", {})}, media=bool(spec.get("media")))
     media = ""
@@ -900,6 +945,13 @@ def taken(name):
             (USER_WALLPAPERS / f"{name}.json").exists() or (USER_WALLPAPERS / f"{name}.html").exists())
 
 
+def display_title(name):
+    """A wallpaper's name for people: its spec's title (built-ins are capitalized), else the name, capitalized."""
+    spec = spec_file(name)
+    title = read_spec(spec).get("title") if spec else None
+    return title if isinstance(title, str) and title.strip() and title != name else name[:1].upper() + name[1:]
+
+
 def library():
     """Built-in scenes and shader wallpapers, then the user's wallpapers (HTML and specs), by name."""
     builtin = sorted(p.stem for p in BUILTIN_SPECS.glob("*.json")) if BUILTIN_SPECS.is_dir() else []
@@ -910,19 +962,20 @@ def library():
     return [*scenes, *(n for n in builtin if n not in PRESETS), *sorted(names - set(PRESETS) - set(builtin))]
 
 
-def copy_builtin(name):
+def copy_builtin(name, stem=None):
     """Make the user's own copy of a built-in shader wallpaper (to customize it); return its name."""
     source = BUILTIN_SPECS / f"{name}.json"
     spec = read_spec(source)
-    copy, index = f"{name}-mine", 2
+    stem = stem or f"{name}-mine"
+    copy, index = stem, 2
     while taken(copy):
-        copy, index = f"{name}-mine-{index}", index + 1
+        copy, index = f"{stem}-{index}", index + 1
     USER_WALLPAPERS.mkdir(parents=True, exist_ok=True)
     shader = spec.get("shader")
     if isinstance(shader, str) and shader.endswith(".glsl") and "/" not in shader:
         shutil.copyfile(BUILTIN_SPECS / shader, USER_WALLPAPERS / f"{copy}.glsl")
         spec["shader"] = f"{copy}.glsl"
-    spec["title"] = f"{spec.get('title', name)} (mine)"
+    spec["title"] = f"{spec.get('title', name)} (mine)" if stem.endswith("-mine") else spec.get("title", name)
     (USER_WALLPAPERS / f"{copy}.json").write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     ensure_user_api()
     spec_html(USER_WALLPAPERS / f"{copy}.json")
@@ -1236,7 +1289,7 @@ def run(target, studio=False, preview=False):
     watch_folder(resolve(target))
     watch_hyprland(lambda: GLib.idle_add(refresh_paused))
     studio_window_ref = None
-    unique = not preview and not os.environ.get("ASCIIPAPER_STUDIO_SNAPSHOT") and not is_service()
+    unique = not preview and not os.environ.get("ASCIIPAPER_STUDIO_SNAPSHOT") and not is_service() and not os.environ.get("ASCIIPAPER_SEPARATE")   # ASCIIPAPER_SEPARATE: a second, independent instance (tests)
     app = Adw.Application(application_id="io.github.cyoren.asciipaper" if unique else None,
                           flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
 
@@ -1300,7 +1353,7 @@ def run(target, studio=False, preview=False):
             placeholder = Gtk.Label(label="HTML" if not engine_args(name) else "…", opacity=0.5)
             placeholder.add_css_class("title-2")
             overlay.add_overlay(placeholder)
-            label = Gtk.Label(label=name, ellipsize=3, xalign=0, margin_top=6)
+            label = Gtk.Label(label=display_title(name), ellipsize=3, xalign=0, margin_top=6)
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
             box.append(overlay); box.append(label)
             child = Gtk.FlowBoxChild(child=box)
@@ -1329,13 +1382,13 @@ def run(target, studio=False, preview=False):
             show_wallpaper(app)
             pause_button.set_active(False)
             load_look()
-            toast(f"{name} is on your desktop" if layer_supported else f"Selected {name}")
+            toast(f"{display_title(name)} is on your desktop" if layer_supported else f"Selected {display_title(name)}")
 
         flow.connect("child-activated", lambda _flow, child: apply(child.wallpaper))
 
         # ---- Look: the selected spec wallpaper's settings, written to its JSON; the engine redraws live.
         # ---- Speed: the calm control, first after the gallery. Slows every wallpaper, its simulation and its media.
-        motion = Adw.PreferencesGroup(title="Speed")
+        motion = Adw.PreferencesGroup()
         page.add(motion)
         speed_row = Adw.ActionRow(title="Speed", subtitle="Slower is calmer, for every wallpaper")
         speed_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0.1, 2, 0.05)
@@ -1346,6 +1399,60 @@ def run(target, studio=False, preview=False):
         speed_scale.connect("value-changed", lambda s: set_engine_options({"speed": round(s.get_value(), 2)}))
         speed_row.add_suffix(speed_scale)
         motion.add(speed_row)
+
+        # ---- Discover: ready-made wallpapers in packs. Picking one makes it the user's own (to tune) and shows it.
+        discover = Adw.PreferencesGroup(title="Discover", description="Ready-made wallpapers, by mood. Pick one to make it yours.")
+        page.add(discover)
+        tabs = Gtk.Box(spacing=6, margin_bottom=6)
+        pack_about = Gtk.Label(xalign=0, wrap=True, margin_bottom=8)
+        pack_about.add_css_class("dim-label")
+        pack_flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True, max_children_per_line=4,
+                                min_children_per_line=2, row_spacing=12, column_spacing=12, activate_on_single_click=True)
+        for widget in (tabs, pack_about, pack_flow):
+            discover.add(widget)
+
+        def show_pack(index):
+            pack = PACKS[index]
+            pack_about.set_label(pack["about"])
+            while (child := pack_flow.get_first_child()):
+                pack_flow.remove(child)
+            for item in pack["items"]:
+                picture = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, can_shrink=True)
+                picture.set_size_request(150, 84)
+                thumb = LOCAL / "thumbnails/packs" / f"{item['name']}.jpg"
+                if thumb.is_file():
+                    picture.set_filename(str(thumb))
+                frame = Gtk.Overlay(child=picture, overflow=Gtk.Overflow.HIDDEN)
+                frame.add_css_class("card")
+                box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+                box.append(frame)
+                box.append(Gtk.Label(label=item["title"], ellipsize=3, xalign=0, margin_top=6))
+                child = Gtk.FlowBoxChild(child=box)
+                child.pack_item = item["name"]
+                pack_flow.append(child)
+
+        first_tab = None
+        for index, pack in enumerate(PACKS):
+            tab = Gtk.ToggleButton(label=pack["pack"])
+            tab.add_css_class("pill")
+            if first_tab:
+                tab.set_group(first_tab)
+            else:
+                first_tab = tab
+            tab.connect("toggled", lambda button, i=index: button.get_active() and show_pack(i))
+            tabs.append(tab)
+        if first_tab:
+            first_tab.set_active(True)
+
+        def add_pack_wallpaper(_flow, child):
+            try:
+                name = add_from_pack(child.pack_item)
+            except (OSError, ValueError, SystemExit) as error:
+                toast(f"Could not add it: {getattr(error, 'code', None) or error}")
+                return
+            refresh_gallery(select=name)
+            apply(name)
+        pack_flow.connect("child-activated", add_pack_wallpaper)
 
         look = Adw.PreferencesGroup(title="Look", description="Changes appear on your desktop as you make them.")
         page.add(look)
@@ -1375,10 +1482,16 @@ def run(target, studio=False, preview=False):
                     return
                 apply_look(spec, normalize_look({"style": value}))
                 GLib.idle_add(lambda: (reload_rows(), False)[1])
+            elif key.startswith("interaction."):
+                how = spec.get("interaction") or {}
+                spec["interaction"] = {**({"mode": how} if isinstance(how, str) else how), key[12:]: value}
             elif key.startswith(("uniforms.", "effects.")):
                 group, _, sub = key.partition(".")
                 spec.setdefault(group, {})[sub] = value
             else:
+                if key == "shape":
+                    fit_shape(spec, value)
+                    GLib.idle_add(lambda: (reload_rows(), False)[1])   # the cell size row follows
                 spec[key] = value
             if not look_state["pending"]:
                 look_state["pending"] = GLib.timeout_add(150, save_look)
@@ -1391,7 +1504,15 @@ def run(target, studio=False, preview=False):
                 return spec.get("effects", {}).get(key[8:], fallback)
             if key == "style":
                 return spec.get("style")
+            if key.startswith("interaction."):
+                how = spec.get("interaction") or {}
+                return ({"mode": how} if isinstance(how, str) else how).get(key[12:], fallback)
             return spec.get(key, fallback)
+
+        more_state = {"on": False}
+        more_row = Adw.ExpanderRow(title="More options", subtitle="Shape, characters, picture tuning and effects")
+        def place(row):   # the basics sit in the group; the rest folds into "More options"
+            (more_row.add_row if more_state["on"] else look.add)(row)
 
         def slider_row(title, key, low, high, step, fallback, subtitle=None, media=True):
             row = Adw.ActionRow(title=title, subtitle=subtitle or "")
@@ -1401,7 +1522,7 @@ def run(target, studio=False, preview=False):
             scale.connect("value-changed", lambda s: look_changed(key, round(s.get_value(), 2)))
             row.add_suffix(scale)
             look_rows.append((row, media, lambda: scale.set_value(float(current(key, fallback)))))
-            look.add(row)
+            place(row)
 
         def combo_row(title, key, labels, values, fallback, media=True, subtitle=None):
             row = Adw.ComboRow(title=title, subtitle=subtitle or "", model=Gtk.StringList.new(labels))
@@ -1412,13 +1533,13 @@ def run(target, studio=False, preview=False):
                 value = current(key, fallback)
                 row.set_selected(values.index(value) if value in values else 0)
             look_rows.append((row, media, load))
-            look.add(row)
+            place(row)
 
         def switch_row(title, key, subtitle, media=True):
             row = Adw.SwitchRow(title=title, subtitle=subtitle)
             row.connect("notify::active", lambda r, _: look_changed(key, 1 if r.get_active() else 0))
             look_rows.append((row, media, lambda: row.set_active(bool(current(key, 0)))))
-            look.add(row)
+            place(row)
 
         def color_row(title, key, fallback, media=True, subtitle=None):
             row = Adw.ActionRow(title=title, subtitle=subtitle or "")
@@ -1431,35 +1552,41 @@ def run(target, studio=False, preview=False):
                 rgba = Gdk.RGBA(); rgba.parse(str(current(key, fallback))); button.set_rgba(rgba)
             row.add_suffix(button)
             look_rows.append((row, media, load))
-            look.add(row)
+            place(row)
 
+        # The basics: the few choices that matter most.
         combo_row("Style", "style", ["Custom"] + [f"{n.capitalize()}: {STYLES[n][0]}" for n in STYLES], [None, *STYLES], None,
-                  media=False, subtitle="A whole look at once; fine-tune it below")
+                  media=False, subtitle="A whole look in one click")
+        combo_row("Interaction", "interaction.mode", ["None", "Glow that follows", "Magnify", "Push away", "Pull in", "Swirl", "Ripple"],
+                  INTERACTIONS, "none", media=False, subtitle="How it answers your pointer")
+        slider_row("Interaction strength", "interaction.strength", 0, 2, 0.05, 1, media=False)
+        combo_row("Colours", "palette", ["Its own"] + [n.capitalize() for n in PALETTES], [[], *PALETTES.values()], [], media=False)
+        combo_row("Picture colours", "uniforms.colorMode", ["The picture's own", "One colour", "Gradient"], [0, 1, 2], 0)
+        slider_row("Brightness", "uniforms.brightness", -1, 1, 0.05, 0)
+        slider_row("Cell size", "cell", 4, 24, 1, 8, "Smaller shows more detail", media=False)
+        look.add(more_row)
+        more_state["on"] = True
+        # Everything else, folded away.
         combo_row("Shape", "shape", [n.capitalize() for n in SHAPES], SHAPES, "glyph", media=False,
                   subtitle="Characters, or pixels, tiles, dots, LEGO…")
-        combo_row("Palette", "palette", ["Own colours"] + [n.capitalize() for n in PALETTES], [[], *PALETTES.values()], [],
-                  media=False)
         combo_row("Dither", "dither", [n[0].upper() + n[1:] for n in DITHERS], DITHERS, "none", media=False)
+        slider_row("Interaction reach", "interaction.radius", 0.05, 0.6, 0.01, 0.25, media=False)
         charset_names = list(CHARSETS)
         combo_row("Characters", "charset", [n.capitalize() for n in charset_names], [CHARSETS[n] for n in charset_names],
                   CHARSETS["classic"], media=False, subtitle="From light to dense")
-        slider_row("Character size", "cell", 4, 24, 1, 8, media=False)
         combo_row("Weight", "weight", ["Light", "Regular", "Bold", "Heavy"], [300, 400, 700, 900], 400, media=False)
         slider_row("Glow", "fill", 0, 1, 0.05, 0, "Each character's colour, faintly, behind it", media=False)
         color_row("Background", "background", "#000000", media=False)
-        combo_row("Colours", "uniforms.colorMode", ["The picture's own", "One colour", "Gradient"], [0, 1, 2], 0)
         color_row("Tint", "uniforms.tint", "#e8b900", subtitle="For dark or grey parts, and the one-colour and gradient modes")
         color_row("Second colour", "uniforms.tint2", "#ff3355", subtitle="The gradient's bright end")
         slider_row("Colour lift", "uniforms.vivid", 0, 1, 0.05, 0.5, "Brighten colours towards full strength")
         slider_row("Contrast", "uniforms.contrast", 0.2, 4, 0.05, 1)
-        slider_row("Brightness", "uniforms.brightness", -1, 1, 0.05, 0)
         switch_row("Invert", "uniforms.invert", "Give the dense characters to the dark parts")
         switch_row("Fill the screen", "uniforms.fit", "Crop to cover the whole screen instead of showing everything")
         slider_row("Backdrop", "uniforms.backdrop", 0, 1, 0.05, 0.3, "A dim copy behind, where the picture doesn't reach")
         slider_row("Zoom", "uniforms.zoom", 0.5, 3, 0.05, 1)
-        slider_row("Hover lens", "uniforms.lens", 0, 2, 0.1, 1, "Magnify around the pointer")
         slider_row("Click ripple", "uniforms.ripple", 0, 2, 0.1, 1)
-        slider_row("Playback speed", "uniforms.speed", 0.1, 3, 0.05, 1)
+        slider_row("Video speed", "uniforms.speed", 0.1, 3, 0.05, 1)
         combo_row("Warp", "uniforms.warp", [n.capitalize() for n in WARPS], list(range(len(WARPS))), 0)
         slider_row("Warp amount", "uniforms.warpAmount", -1, 1, 0.05, 0.5)
         for effect, (low, high) in EFFECTS.items():
@@ -1829,8 +1956,17 @@ def run(target, studio=False, preview=False):
         load_look()
         track_selection()
         win.present()
-        # Start on the gallery: otherwise GTK focuses the first text field (paste a look code) and scrolls to the bottom.
-        GLib.idle_add(lambda: (flow.grab_focus(), False)[1])
+        # Start at the top, on the gallery: otherwise GTK focuses the first text field (paste a look code) and
+        # scrolls the page to the bottom. Done once the window has laid out, which takes a moment.
+        def start_at_top():
+            flow.grab_focus()
+            scroller = page.get_first_child()
+            while scroller and not isinstance(scroller, Gtk.ScrolledWindow):
+                scroller = scroller.get_first_child()
+            if scroller:
+                scroller.get_vadjustment().set_value(0)
+            return False
+        GLib.timeout_add(300, start_at_top)
         if os.environ.get("ASCIIPAPER_STUDIO_SNAPSHOT"):   # docs and tests: save the window as a PNG, then quit
             win.set_default_size(1000, int(os.environ.get("ASCIIPAPER_STUDIO_SNAPSHOT_HEIGHT", "860")))
             def scroll():   # ASCIIPAPER_STUDIO_SNAPSHOT_SCROLL=0..1: how far down the page to capture
@@ -2122,6 +2258,15 @@ def main():
                 look[key] = value
         name = restyle(args[1], normalize_look(look))
         print(f"Restyled {name}" + ("" if name == args[1] else f" (your copy of {args[1]})"))
+    elif args == ["packs"]:
+        for pack in PACKS:
+            print(f"{pack['pack']}: {pack['about']}")
+            for item in pack["items"]:
+                print(f"  {item['name']:<18} {item['title']}")
+    elif args[:1] == ["add"] and len(args) == 2:
+        name = add_from_pack(args[1])
+        print(f"Added {name}")
+        set_wallpaper(name)
     elif args[:1] == ["speed"] and len(args) <= 2:
         options = {**ENGINE_DEFAULTS, **load_engine_options()}
         if len(args) == 2:

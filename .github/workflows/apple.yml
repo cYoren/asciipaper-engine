@@ -2,10 +2,11 @@ name: Apple apps
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write   # attach the macOS app to releases
 jobs:
   build:
     runs-on: macos-15
@@ -54,6 +55,19 @@ jobs:
           cat apple/selftest/ios.json
           xcrun simctl shutdown "$device_id"
           python3 -c 'import json; assert json.load(open("apple/selftest/ios.json"))["ok"] is True'
+      - name: Package the macOS app for releases
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          # Ad-hoc signature: Apple Silicon won't run unsigned code. Not notarized yet, so the first launch
+          # goes through System Settings, Privacy and Security, Open Anyway.
+          app=apple/build/Build/Products/Debug/ASCIIPaper-macOS.app
+          codesign --force --deep --sign - "$app"
+          ditto -c -k --keepParent "$app" "asciipaper-macos-${GITHUB_REF_NAME#v}.zip"
+      - name: Attach the macOS app to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: asciipaper-macos-*.zip
       - name: iPhone crash and log diagnostics
         if: failure()
         run: |

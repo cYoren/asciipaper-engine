@@ -15,6 +15,8 @@ Live, interactive **ASCII wallpapers** for Windows, Linux, macOS and Android. On
 - **Light.** A small native engine (C, OpenGL ES) draws on the GPU: under 1% of a CPU core and about 100 MB on Linux. Wallpapers stop drawing behind fullscreen and maximized windows, and while the PC is locked.
 - **Calm by default.** Wallpapers react to the pointer like liquid (fluid, yin-yang) and never chase it. Click ripples and the hover lens are there if you want them (Settings, Customize).
 - **Port anything.** Pictures, GIFs, videos, links, and posts on X or Twitter. asciipaper measures the media and picks a starting look: levels, colours, and which parts get the dense characters.
+- **Discover packs.** 27 ready-made wallpapers in six moods (Calm, Retro, Neon, Print and paper, Hacker, Toys), one click each, in every app. From a terminal: `asciipaper packs`, then `asciipaper add still-ocean`.
+- **Interaction you choose.** Each wallpaper can glow where your pointer is, magnify, push away, pull in, swirl or ripple, at the strength you like, or simply stay still.
 - **Calm by choice.** One Speed slider, right under your wallpaper, slows any scene down (or speeds it up) everywhere: Linux, Windows, Mac and Android. From a terminal: `asciipaper speed 0.5`.
 - **38 styles, live.** Pick a style, then fine-tune shapes, 21 character sets, 20 retro palettes, dithering, CRT, bloom, glitch, grain and warps. Everything changes on your desktop as you move the sliders.
 - **Share a look in one line.** Every look is a short recipe code, and every PNG you render carries its own, so a screenshot you post *is* the wallpaper.
@@ -29,7 +31,7 @@ Live, interactive **ASCII wallpapers** for Windows, Linux, macOS and Android. On
 
 **Portable projects:** save an editable `.asciipaper.json` file containing the shader, appearance and media, then import it on another platform. Windows, Android, Apple and the browser share the Studio; Linux's GTK Studio and CLI use the same specs. See [shared runtime and builds](docs/shared-runtime.md) and the [platform status](docs/unification-progress.md) for verification and remaining differences.
 
-**macOS**: make or pick a wallpaper on Linux or Windows (or grab one people share), export it (`asciipaper export NAME`, or **Export** in the Studio), unzip, and open `index.html` in the free [Plash](https://sindresorhus.com/plash) app: it stays live and interactive. Prefer a plain video wallpaper? `asciipaper render NAME wallpaper.mp4`.
+**macOS 14+ (preview)**: download `asciipaper-macos-….zip` from [Releases](https://github.com/cYoren/asciipaper/releases/latest), unzip, and move it to Applications. It isn't notarized yet, so the first time open System Settings, Privacy and Security, and choose **Open Anyway**. Or, without installing anything: make or pick a wallpaper on Linux or Windows (or grab one people share), export it (`asciipaper export NAME`, or **Export** in the Studio), unzip, and open `index.html` in the free [Plash](https://sindresorhus.com/plash) app: it stays live and interactive. Prefer a plain video wallpaper? `asciipaper render NAME wallpaper.mp4`.
 
 **Apple development apps:** [`apple/project.yml`](apple/project.yml) defines native macOS and iPhone/iPad hosts for the common Studio. The macOS target includes a desktop wallpaper host. The iOS target edits, previews and exports; iOS does not support a third-party continuous interactive home-screen wallpaper. These are development targets, not signed App Store releases.
 

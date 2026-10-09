@@ -1,5 +1,13 @@
 
-uniform sampler2D u_lut;uniform float u_glyphs,u_useLut,u_dither,u_paletteSize;uniform vec3 u_palette[16];
+uniform sampler2D u_lut;uniform float u_glyphs,u_useLut,u_dither,u_paletteSize,u_interact,u_interactStrength,u_interactRadius;uniform vec3 u_palette[16];
+float ap_reach;
+vec2 ap_interact(vec2 uv){ap_reach=0.0;if(u_interact<0.5)return uv;
+vec2 k=vec2(u_aspect,1.0),q=(uv-u_pointer)*k,dir=q/max(length(q),1e-4)/k;float d=length(q),r=max(u_interactRadius,0.02);
+float on=u_strength*u_interactStrength*clamp(1.5-u_idle*0.5,0.0,1.0);ap_reach=on*smoothstep(r,0.0,d);
+if(u_interact<1.5)return uv;if(u_interact<2.5)return u_pointer+(uv-u_pointer)*(1.0-0.5*ap_reach);
+if(u_interact<3.5)return uv-dir*ap_reach*r*0.35;if(u_interact<4.5)return uv+dir*ap_reach*r*0.35;
+if(u_interact<5.5){float t=ap_reach*2.5;return u_pointer+mat2(cos(t),sin(t),-sin(t),cos(t))*q/k;}
+return uv+dir*sin(d*60.0-u_time*6.0)*0.012*on*smoothstep(r*2.0,0.0,d);}
 float ap_b2(vec2 a){a=floor(a);return fract(a.x*0.5+a.y*a.y*0.75);}
 float ap_b4(vec2 a){return ap_b2(0.5*a)*0.25+ap_b2(a);}
 float ap_b8(vec2 a){return ap_b4(0.5*a)*0.25+ap_b2(a);}
@@ -9,7 +17,8 @@ if(m<5.5)return clamp(length(fract(a/4.0)-0.5)*1.41,0.0,1.0);if(m<6.5)return fra
 if(m<7.5)return fract(a.y/4.0);if(m<8.5)return fract(a.x/4.0);if(m<9.5)return fract((a.x+a.y)/4.0);
 if(m<10.5)return fract(sin(dot(floor(a),vec2(12.9898,78.233)))*43758.5453);
 return fract(52.9829189*fract(dot(floor(a),vec2(0.06711056,0.00583715))));}
-void main(){vec4 c=cell(vec2(v_uv.x,1.0-v_uv.y));float l=clamp(c.a,0.0,1.0);vec3 rgb=clamp(c.rgb,0.0,1.0);
+void main(){vec4 c=cell(ap_interact(vec2(v_uv.x,1.0-v_uv.y)));float l=clamp(c.a,0.0,1.0);vec3 rgb=clamp(c.rgb,0.0,1.0);
+if(u_interact>0.5&&u_interact<1.5){l=clamp(l+ap_reach*0.45,0.0,1.0);rgb=clamp(rgb+ap_reach*0.25,0.0,1.0);}
 if(u_dither>0.5){float t=ap_dither(gl_FragCoord.xy)-0.5;if(l>0.0)l=clamp(l+t/max(u_glyphs-1.0,1.0),0.0,1.0);
 if(u_paletteSize>0.5)rgb=clamp(rgb+t*pow(max(u_paletteSize-1.0,1.0),-0.333),0.0,1.0);}
 if(u_paletteSize>0.5){vec3 best=u_palette[0];float bd=1e9;for(int i=0;i<16;i++){if(float(i)>=u_paletteSize)break;
