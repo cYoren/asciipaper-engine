@@ -33,7 +33,7 @@ try{
   const wait=async expression=>{for(let i=0;i<100;i++){if(await evaluate(expression))return;await new Promise(r=>setTimeout(r,100));}throw Error('Timed out: '+expression+' '+JSON.stringify({errors,page:await evaluate('({url:location.href,html:document.documentElement.outerHTML.slice(0,1400)})')}));};
   await call('Runtime.enable');await call('Page.enable');
   await wait("!!window.paperPortable && document.querySelectorAll('.card').length>=11");
-  await wait("!!document.querySelector('#now-preview').contentWindow.asciipaper?.capture");
+  await wait("!!document.querySelector('#now-preview').contentWindow.asciipaper?.ready");
   const result=await evaluate(`(async()=>{
     const host=window.mockHost;
     const p=await paperPortable.projectOf('synthwave');p.title='Roundtrip project';p.spec.effects={crt:.3};p.spec.shader='vec4 cell(vec2 uv){return vec4(uv.x,uv.y,0.5,1.0);}';
@@ -42,7 +42,7 @@ try{
     if(saved.spec.effects.crt!==.3||!saved.spec.shader.includes('cell('))throw Error('Project fields were lost');
     const frame=document.querySelector('#now-preview');frame.src=state.library.find(w=>w.name===state.current).url;
     await new Promise(ok=>frame.onload=ok);
-    for(let i=0;i<50&&!frame.contentDocument.querySelector('canvas');i++)await new Promise(ok=>setTimeout(ok,100));
+    for(let i=0;i<50&&!frame.contentWindow.asciipaper?.ready;i++)await new Promise(ok=>setTimeout(ok,100));
     frame.contentWindow.asciipaper.set({paused:false});
     document.querySelectorAll('.card .edit')[7]?.focus();
     const blob=await document.querySelector('#now-preview').contentWindow.asciipaper.capture();
@@ -51,12 +51,12 @@ try{
     return {name:state.current,imageBytes:blob.size,projectBytes:JSON.stringify(saved).length};
   })()`);
   await call('Page.reload');await wait("!!window.paperPortable && document.querySelector('#now-name').textContent==='Roundtrip project'");
-  await wait("!!document.querySelector('#now-preview').contentWindow.asciipaper?.capture");
+  await wait("!!document.querySelector('#now-preview').contentWindow.asciipaper?.ready");
   await evaluate("window.paperVisibility(true)");
   const paused=await evaluate("document.querySelector('#now-preview').contentWindow.asciipaper.options.paused");if(!paused)throw Error('Hidden Studio kept drawing');
   // A late iframe load must preserve the native host's hidden state.
   await evaluate("(async()=>{const frame=document.querySelector('#now-preview');await new Promise(ok=>{frame.addEventListener('load',ok,{once:true});frame.contentWindow.location.reload();});})()");
-  await wait("!!document.querySelector('#now-preview').contentWindow.asciipaper?.capture");
+  await wait("!!document.querySelector('#now-preview').contentWindow.asciipaper?.ready");
   await wait("document.querySelector('#now-preview').contentWindow.asciipaper.options.paused");
   if(errors.length)throw Error(errors.join('\n'));
   console.log('PASS Studio project persistence, WebGL capture and visibility',JSON.stringify(result));
@@ -81,6 +81,14 @@ try{
         if(!/asciipaper frames=[1-9]\d* drawing=true/.test(dump))throw Error('Native scene did not draw: '+name+' '+dump.slice(-1500));
       }
       const shader=await readFile(resolve(root,'wallpapers/lib/media.glsl'),'utf8');
+      const size=adb('shell','dumpsys','activity','service','io.github.cyoren.asciipaper/.WallpaperService').match(/render=(\d+)x(\d+)/);
+      if(!size)throw Error('No native output size');
+      await evaluate("window.mockHost.call('setOptions',{options:{quality:.5}})");
+      const reduced=`render=${Math.round(Number(size[1])*.5)}x${Math.round(Number(size[2])*.5)}`;
+      let reducedDump='';
+      for(let i=0;i<20;i++){await new Promise(r=>setTimeout(r,250));reducedDump=adb('shell','dumpsys','activity','service','io.github.cyoren.asciipaper/.WallpaperService');if(reducedDump.includes(reduced))break;}
+      if(!reducedDump.includes(reduced))throw Error('Quality did not reduce native output pixels: '+reducedDump.slice(-1000));
+      await evaluate("window.mockHost.call('setOptions',{options:{quality:1}})");
       const fixtures=[
         {name:'source.png',mime:'image/png',data:'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQMAAAD+wSzIAAAAA1BMVEX/AAAZ4gk3AAAAC0lEQVQI12NgQAUAABAAAaHFIcEAAAAASUVORK5CYII='},
         {name:'source.gif',mime:'image/gif',data:'R0lGODlhCAAIAPAAAP8AAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQAFAAAACwAAAAACAAIAAACB4SPqcvtXQAAIfkEABQAAAAsAAAAAAgACACAAAD/AAAAAgeEj6nL7V0AADs='},
@@ -101,7 +109,7 @@ try{
       if(/can't draw|shader:|link:|Cannot load media|Video decode error|FATAL EXCEPTION|Fatal signal/.test(log))throw Error(log.slice(-4000));
       adb('shell','input','keyevent','KEYCODE_HOME');await new Promise(r=>setTimeout(r,500));
       if(/asciipaper frames=\d+ drawing=true/.test(adb('shell','dumpsys','activity','service','io.github.cyoren.asciipaper/.WallpaperService')))throw Error('Native preview kept drawing after leaving');
-      console.log('PASS all 11 native scenes, PNG/GIF/video media and hidden-engine pause');
+      console.log('PASS all 11 native scenes, PNG/GIF/video media, render quality and hidden-engine pause');
     }
   }
 }finally{ws?.close();if(browser){browser.kill('SIGTERM');await new Promise(ok=>{browser.once('exit',ok);setTimeout(ok,3000);});}await new Promise(ok=>server.close(ok));await rm(profile,{recursive:true,force:true,maxRetries:5,retryDelay:300});}

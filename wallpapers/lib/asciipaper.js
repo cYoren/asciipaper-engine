@@ -394,7 +394,9 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
     return true;
   }
 
-  window.asciipaper = {options, pointer, set, ascii, spec, load, patch, capture: () => lastScene.capture(),
+  window.asciipaper = {options, pointer, set, ascii, spec, load, patch,
+    get ready() { return !!lastScene; },
+    capture: () => lastScene ? lastScene.capture() : Promise.reject(new Error('Preview is still loading')),
     onChange(callback) { addEventListener('asciipaper-settings', event => callback(event.detail)); }};
   set({});
 })();

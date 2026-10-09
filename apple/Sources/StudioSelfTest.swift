@@ -24,7 +24,8 @@ enum StudioSelfTest {
             if(!records.some(r=>r.name===state.current))throw Error('Native library did not persist the project');
             const frame=document.querySelector('#now-preview');
             await new Promise(ok=>{frame.addEventListener('load',ok,{once:true});frame.src=state.library.find(w=>w.name===state.current).url;});
-            for(let i=0;i<100&&!frame.contentWindow.asciipaper?.capture;i++)await new Promise(ok=>setTimeout(ok,100));
+            for(let i=0;i<100&&!frame.contentWindow.asciipaper?.ready;i++)await new Promise(ok=>setTimeout(ok,100));
+            if(!frame.contentWindow.asciipaper?.ready)throw Error('Preview failed: '+frame.contentDocument.body.textContent);
             frame.contentWindow.asciipaper.set({paused:false});
             const blob=await frame.contentWindow.asciipaper.capture();
             const image=document.createElement('img'),url=URL.createObjectURL(blob);image.src=url;await image.decode();
