@@ -45,12 +45,21 @@ enum StudioSelfTest {
             if(!frame.contentWindow.asciipaper.options.paused)throw Error('Hidden Studio kept drawing');
             return {ok:true,scenes:state.library.filter(w=>!w.own).length,name:state.current,image:await PaperProject.base64(blob)};
             """
-            web.callAsyncJavaScript(script,arguments:[:],in:nil,in:.page) { value in
-                switch value {
-                case .success(let result): finish(result as? [String:Any],nil)
-                case .failure(let error): finish(nil,error)
-                }
+            // Plain evaluateJavaScript plus polling: callAsyncJavaScript's Swift form needs libswiftWebKit,
+            // which iOS 17 and 18 don't ship, and linking it made the app crash at launch there.
+            let wrapped = "(async()=>{try{window.__selftestResult=JSON.stringify(await (async()=>{\(script)})())}catch(e){window.__selftestResult=JSON.stringify({ok:false,error:String(e&&e.message||e)})}})();0"
+            web.evaluateJavaScript(wrapped) { _,error in
+                if let error { finish(nil,error) } else { poll(web) }
             }
+        }
+    }
+    private static func poll(_ web: WKWebView) {
+        web.evaluateJavaScript("window.__selftestResult || ''") { value,_ in
+            guard let text = value as? String, !text.isEmpty, let data = text.data(using:.utf8) else {
+                DispatchQueue.main.asyncAfter(deadline:.now()+0.5) { poll(web) }; return
+            }
+            let result = (try? JSONSerialization.jsonObject(with:data)) as? [String:Any]
+            finish(result, result?["ok"] as? Bool == true ? nil : NSError(domain:"selftest",code:2,userInfo:[NSLocalizedDescriptionKey:result?["error"] as? String ?? "Bad report"]))
         }
     }
     private static func finish(_ result: [String:Any]?, _ error: Error?) {
