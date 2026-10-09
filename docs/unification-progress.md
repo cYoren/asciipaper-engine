@@ -28,7 +28,7 @@ O formato e a edição comum ficaram unidos; a paridade total de integrações a
 
 ## Validação e aceite
 
-Passaram localmente os 14 testes automatizados de formato, recipes, shaders, geração, frame policy, PNG e ciclos das simulações; build Linux e snapshots das 11 cenas; build Android para quatro ABIs e lint; teste Chromium de persistência, captura não vazia e pausa, inclusive depois de recarregar o iframe. No emulador Android API 35, passaram as 11 cenas nativas, decodificação de PNG/GIF/vídeo e pausa ao sair do preview. Os resultados dos builds Windows/Apple são registrados na PR.
+Passaram localmente os 14 testes automatizados de formato, recipes, shaders, geração, frame policy, PNG e ciclos das simulações; build Linux e snapshots das 11 cenas; build Android para quatro ABIs e lint; teste Chromium de persistência, captura não vazia e pausa, inclusive depois de recarregar o iframe. No emulador Android API 35, passaram as 11 cenas nativas, decodificação de PNG/GIF/vídeo, redução da resolução por qualidade e pausa ao sair do preview. No GitHub Actions, passaram os builds e self-tests dos dois ambientes Windows, compatibilidade/Android, os builds iOS/macOS e o self-test do Studio macOS. A validação adicional do simulador iPhone e os resultados do commit final ficam na [PR #2](https://github.com/cYoren/asciipaper/pull/2).
 
 Build e testes não comprovam consumo mínimo de energia. O trabalho remove callbacks periódicos quando o wallpaper está oculto e limita a taxa de frames, mas faltam medições comparáveis em aparelhos físicos. macOS/iOS também precisam de testes de WebKit, seleção de arquivos e codecs em hardware Apple.
 

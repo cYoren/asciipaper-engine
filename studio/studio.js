@@ -122,10 +122,11 @@ async function queueThumbnails() {
   thumbnailing = true;
   try {
     for (const w of state.library.filter(w => !w.thumb && w.kind !== 'html').slice(0, 4)) {
-      if (document.hidden) break;
+      if (document.hidden || window.paperNativeHidden) break;
       const frame = Object.assign(document.createElement('iframe'), {src: withParam(w.url, 'thumbnail=1')});
       $('#thumbnailer').replaceChildren(frame);
       await new Promise(r => setTimeout(r, 2600));
+      if(document.hidden || window.paperNativeHidden){$('#thumbnailer').replaceChildren();break;}
       const canvas = frame.contentDocument?.querySelector('canvas');
       if (canvas) {
         const data = canvas.toDataURL('image/jpeg', 0.85);
@@ -428,7 +429,11 @@ $('#drawer-export').addEventListener('click', async () => {
   } catch (error) { fail(error); }
 });
 $('#drawer-recipe').addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText(await encodeRecipe(item(editing))); toast('Look code copied'); } catch (error) { fail(error); }
+  try {
+    const text=await encodeRecipe(item(editing));
+    if(window.webkit?.messageHandlers?.paper)await paperPortable.native('copyText',{text});else await navigator.clipboard.writeText(text);
+    toast('Look code copied');
+  } catch (error) { fail(error); }
 });
 $('#drawer-paste').addEventListener('keydown', async e => {
   if (e.key !== 'Enter') return;
@@ -480,6 +485,7 @@ host.call('state').then(update).catch(fail);
 // Only the preview the user can see gets animation time. Parent visibility is
 // propagated explicitly because iframe visibility alone doesn't stop its rAF.
 function syncPreviews() {
+  if(document.hidden || window.paperNativeHidden)$('#thumbnailer').replaceChildren();
   for (const id of ['now-preview','drawer-preview']) {
     const frame = $('#' + id), drawer = $('#drawer').classList.contains('open');
     const paused = window.paperNativeHidden || document.hidden || state?.paused || (id === 'now-preview' && drawer) || (id === 'drawer-preview' && !drawer);

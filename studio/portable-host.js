@@ -26,8 +26,8 @@ window.portableReady = (async () => {
   const persisted=apple ? await native('loadState',{}) : {};
   const getSetting = key => {if(key in persisted)return persisted[key];try{return localStorage.getItem(key);}catch(_){return null;}};
   const setSetting = (key,value) => {persisted[key]=value;if(apple)native('saveState',persisted).catch(console.error);else try{localStorage.setItem(key,value);}catch(_){}};
-  const options = {...{fps:24,idleFps:12,quality:1,pointer:1,clicks:true}, ...JSON.parse(getSetting('options') || '{}')};
-  const state = {current:getSetting('current') || 'synthwave', paused:false, autostart:false, version:'1.2.0', options, library:[]};
+  const options = {...{fps:24,idleFps:12,quality:1,pointer:1,clicks:false}, ...JSON.parse(getSetting('options') || '{}')};
+  const state = {current:getSetting('current') || 'synthwave', paused:getSetting('paused')==='true', autostart:false, version:'1.2.0', options, library:[]};
   const builtins = await (await fetch(new URL('catalog.json', WP))).json();
   for (const w of builtins) state.library.push({...w, own:false, url:new URL(w.url, WP).href, spec:w.spec ? new URL(w.spec, WP).href : null, thumb:new URL(`thumbnails/${w.name}.jpg`, WP).href});
   const saved = await transact('readonly', s => s.getAll());
@@ -59,6 +59,7 @@ window.portableReady = (async () => {
       const project = w.spec ? await projectOf(name) : null;
       const result = await native('apply',{name,project,url:w.url});
       if (result?.error) throw new Error(result.error);
+      await native('options',options);await native('pause',{paused:state.paused});
     }
     state.current=name; setSetting('current',name); return snapshot();
   }
@@ -81,7 +82,7 @@ window.portableReady = (async () => {
     return new Promise(ok=>dialog.addEventListener('close',()=>{ok(dialog.returnValue==='save'?code.value:null);dialog.remove();},{once:true}));
   }
   const methods = {
-    state:snapshot, apply:({name})=>apply(name), pause:async ({paused})=>{state.paused=paused;await native('pause',{paused});return snapshot();},
+    state:snapshot, apply:({name})=>apply(name), pause:async ({paused})=>{state.paused=paused;setSetting('paused',String(paused));await native('pause',{paused});return snapshot();},
     setOptions:async ({options:next})=>{Object.assign(options,next);setSetting('options',JSON.stringify(options));await native('options',options);return snapshot();},
     setAutostart:()=>{throw new Error('Manage startup in your system settings');},
     openFolder:()=>{throw new Error('Use Import project and Save project to manage portable files');},

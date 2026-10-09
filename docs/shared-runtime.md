@@ -39,7 +39,7 @@ The local MCP server also exposes `export_project` and `import_project`. It is a
 
 The launcher opens the shared Studio with all 11 built-in scenes and saved custom projects. Choose local media or a direct HTTPS media link, edit its appearance, then open **Set wallpaper**, which uses Android's system live-wallpaper picker. PNG/JPEG/WebP and platform-supported images decode once; GIF frames reuse a small bitmap. Video uses MediaPlayer and SurfaceTexture with a GPU conversion pass, without reading every video frame back onto the CPU. Codec support depends on the device.
 
-The renderer uses on-demand GLSurfaceView drawing. Defaults are 24 active fps and 12 idle fps after two seconds without input. Hidden, destroyed, screen-off and manually paused surfaces stop periodic callbacks. Battery saver and thermal states cap the rate. Video decoding follows engine visibility. Shader programs and the EGL context are reused when possible; look edits do not require decoding unchanged media again. Diagnostics are available with:
+The renderer uses on-demand GLSurfaceView drawing. Defaults are 24 active fps and 12 idle fps after two seconds without input. Hidden, destroyed, screen-off and manually paused surfaces stop periodic callbacks. Battery saver and thermal states cap the rate. Video decoding follows engine visibility. Quality scales the glyph output resolution while keeping the character grid's logical dimensions; reduced output uses a simple GPU upscale pass. Shader programs and the EGL context are reused when possible; look edits do not require decoding unchanged media again. Diagnostics are available with:
 
 ```sh
 adb shell dumpsys activity service io.github.cyoren.asciipaper/.WallpaperService
@@ -53,7 +53,7 @@ Store bundles require a real signing identity. Set `ASCIIPAPER_RELEASE_STORE_FIL
 
 ## Apple
 
-`apple/project.yml` defines iPhone/iPad (iOS 17+) and macOS (14+) app targets using the shared Studio and WKWebView. Generate the Xcode project with `xcodegen generate --spec apple/project.yml`. The Apple workflow builds both targets without signing; it does not archive, notarize or publish a store release.
+`apple/project.yml` defines iPhone/iPad (iOS 17+) and macOS (14+) app targets using the shared Studio and WKWebView. Generate the Xcode project with `xcodegen generate --spec apple/project.yml`. The Apple workflow builds both targets without signing and runs isolated Studio self-tests on macOS and an iPhone simulator; it does not archive, notarize or publish a store release. macOS imports use a native open panel through [WKUIDelegate](https://developer.apple.com/documentation/webkit/wkuidelegate/webview(_:runopenpanelwith:initiatedbyframe:completionhandler:)). Look codes use the platform clipboard.
 
 The macOS host creates a desktop window per screen and pauses drawing for sleep and occlusion, with battery/thermal frame caps. iOS provides the editor, project library and exports. iOS does not expose an API for a third-party app to keep a continuous interactive renderer behind the home screen; system wallpaper selection remains in Settings. Apple's supported [Live Photo lock-screen behavior](https://support.apple.com/en-us/120734) is different from an Android live wallpaper. Store preparation must respect [Apple's public API and background-execution rules](https://developer.apple.com/app-store/review/guidelines/).
 

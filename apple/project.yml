@@ -30,6 +30,9 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportsDocumentBrowser: YES
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Select photos to turn into ASCII wallpapers.
+        INFOPLIST_KEY_NSCameraUsageDescription: Capture a picture or video to turn into an ASCII wallpaper.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Record audio when capturing a video to import.
         TARGETED_DEVICE_FAMILY: '1,2'
         SUPPORTS_MACCATALYST: NO
   ASCIIPaper-macOS:

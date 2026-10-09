@@ -10,7 +10,7 @@ import AppKit
 
 // Apple uses the bundled common Studio and WebKit's GPU backend. No deprecated
 // OpenGL ES host, private wallpaper API, or perpetual background task is needed.
-final class PaperController: NSObject, ObservableObject, WKScriptMessageHandlerWithReply, WKNavigationDelegate {
+final class PaperController: NSObject, ObservableObject, WKScriptMessageHandlerWithReply, WKNavigationDelegate, WKUIDelegate {
     private let assets = PaperAssets()
     private var observers: [NSObjectProtocol] = []
     private var isVisible = true
@@ -20,6 +20,7 @@ final class PaperController: NSObject, ObservableObject, WKScriptMessageHandlerW
         config.userContentController.addScriptMessageHandler(WeakPaperBridge(self), contentWorld: .page, name: "paper")
         let view = WKWebView(frame: .zero, configuration: config)
         view.navigationDelegate = self
+        view.uiDelegate = self
         #if DEBUG
         view.isInspectable = true
         #endif
@@ -66,12 +67,26 @@ final class PaperController: NSObject, ObservableObject, WKScriptMessageHandlerW
         guard let u = action.request.url else { decisionHandler(.cancel); return }
         decisionHandler(["paper", "blob", "about", "data"].contains(u.scheme ?? "") ? .allow : .cancel)
     }
+    #if os(macOS)
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        let panel=NSOpenPanel();panel.canChooseFiles=true;panel.canChooseDirectories=parameters.allowsDirectories;panel.allowsMultipleSelection=parameters.allowsMultipleSelection
+        panel.begin { result in completionHandler(result == .OK ? panel.urls : nil) }
+    }
+    #endif
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage, replyHandler reply: @escaping (Any?, String?) -> Void) {
         guard message.frameInfo.isMainFrame, message.frameInfo.request.url?.scheme == "paper",
               let body = message.body as? [String: Any], let method = body["method"] as? String,
               let p = body["params"] as? [String: Any] else { reply(nil,"Untrusted platform request"); return }
         do {
             switch method {
+            case "copyText":
+                guard let text=p["text"] as? String,text.count<=512*1024 else { throw PaperError.invalidProject }
+                #if os(macOS)
+                NSPasteboard.general.clearContents();NSPasteboard.general.setString(text,forType:.string)
+                #else
+                UIPasteboard.general.string=text
+                #endif
+                reply(true,nil)
             case "downloadURL":
                 guard let text=p["url"] as? String,let url=URL(string:text),url.scheme=="https",url.user==nil else { throw PaperError.invalidProject }
                 URLSession.shared.downloadTask(with:url) { file,response,error in
@@ -87,7 +102,7 @@ final class PaperController: NSObject, ObservableObject, WKScriptMessageHandlerW
                 }.resume()
             case "loadState": reply(UserDefaults.standard.dictionary(forKey:"studioState") ?? [:],nil)
             case "saveState":
-                let allowed=p.filter { ["current","options"].contains($0.key) && $0.value is String }
+                let allowed=p.filter { ["current","options","paused"].contains($0.key) && $0.value is String }
                 UserDefaults.standard.set(allowed,forKey:"studioState");reply(true,nil)
             case "loadLibrary": reply(try assets.loadLibrary(),nil)
             case "saveProject": try assets.saveProject(p); reply(true,nil)
