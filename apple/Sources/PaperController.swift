@@ -204,6 +204,7 @@ final class PaperAssets: NSObject, WKURLSchemeHandler {
               var spec = project["spec"] as? [String: Any], let shader = spec["shader"] as? String,
               shader.range(of:"\\bcell\\s*\\(",options:.regularExpression) != nil, shader.count <= 262144 else { throw PaperError.invalidProject }
         let folder = library.appendingPathComponent("active",isDirectory:true)
+        try? FileManager.default.removeItem(at:folder)   // only the active project's files: no stale media piling up
         try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
         do {
             if let media = project["media"] as? [String: Any] {

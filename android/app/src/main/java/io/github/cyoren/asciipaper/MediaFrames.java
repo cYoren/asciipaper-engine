@@ -39,7 +39,7 @@ final class MediaFrames {
         GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D,0,GLES20.GL_RGBA,1,1,0,GLES20.GL_RGBA,GLES20.GL_UNSIGNED_BYTE,java.nio.ByteBuffer.wrap(new byte[]{0,0,0,(byte)255}));
         if (file.toLowerCase(java.util.Locale.ROOT).endsWith(".gif")) {
             try(FileInputStream in=new FileInputStream(file)){movie=Movie.decodeStream(in);}
-            if(movie!=null){width=Math.min(256,movie.width());height=Math.max(1,Math.round((float)width*movie.height()/movie.width()));bitmap=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888);return;}
+            if(movie!=null){int[] size=fit(movie.width(),movie.height());width=size[0];height=size[1];bitmap=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888);return;}
         }
         BitmapFactory.Options opts=new BitmapFactory.Options();opts.inJustDecodeBounds=true;BitmapFactory.decodeFile(file,opts);
         if(opts.outWidth>0){opts.inJustDecodeBounds=false;opts.inSampleSize=1;while(Math.max(opts.outWidth,opts.outHeight)/opts.inSampleSize>512)opts.inSampleSize*=2;bitmap=BitmapFactory.decodeFile(file,opts);if(bitmap!=null){width=bitmap.getWidth();height=bitmap.getHeight();GLUtils.texImage2D(GLES20.GL_TEXTURE_2D,0,bitmap,0);decodedFrames=1;bitmap.recycle();bitmap=null;return;}}
@@ -71,7 +71,7 @@ final class MediaFrames {
         if(surfaceTexture!=null&&available.getAndSet(false)){
             surfaceTexture.updateTexImage();surfaceTexture.getTransformMatrix(transform);
             int w=player.getVideoWidth(),h=player.getVideoHeight();if(w<=0||h<=0)return;
-            int nextW=Math.min(256,w),nextH=Math.max(1,Math.round((float)nextW*h/w));
+            int[] size=fit(w,h);int nextW=size[0],nextH=size[1];
             GLES20.glActiveTexture(GLES20.GL_TEXTURE5);bind(texture,GLES20.GL_TEXTURE_2D);
             if(width!=nextW||height!=nextH){width=nextW;height=nextH;GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D,0,GLES20.GL_RGBA,width,height,0,GLES20.GL_RGBA,GLES20.GL_UNSIGNED_BYTE,null);}
             GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER,fbo);GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER,GLES20.GL_COLOR_ATTACHMENT0,GLES20.GL_TEXTURE_2D,texture,0);
@@ -93,4 +93,6 @@ final class MediaFrames {
         GLES20.glDeleteTextures(2,new int[]{texture,external},0);
     }
     private static void bind(int id,int type){GLES20.glBindTexture(type,id);GLES20.glTexParameteri(type,GLES20.GL_TEXTURE_MIN_FILTER,GLES20.GL_LINEAR);GLES20.glTexParameteri(type,GLES20.GL_TEXTURE_MAG_FILTER,GLES20.GL_LINEAR);GLES20.glTexParameteri(type,GLES20.GL_TEXTURE_WRAP_S,GLES20.GL_CLAMP_TO_EDGE);GLES20.glTexParameteri(type,GLES20.GL_TEXTURE_WRAP_T,GLES20.GL_CLAMP_TO_EDGE);}
+    // At most 256 pixels on the longer side, keeping the aspect: tall media stays inside GL_MAX_TEXTURE_SIZE.
+    static int[] fit(int w,int h){float scale=Math.min(1f,256f/Math.max(1,Math.max(w,h)));return new int[]{Math.max(1,Math.round(w*scale)),Math.max(1,Math.round(h*scale))};}
 }

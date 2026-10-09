@@ -106,6 +106,8 @@ static class Library
             mediaFile = Path.Combine(Media, name + "-" + file);
             File.WriteAllBytes(mediaFile, bytes);
             spec["media"] = "media/" + Path.GetFileName(mediaFile);
+            var mime = media.Str("mime", "");   // the name need not match the type (source.bin can be a PNG)
+            if (Regex.IsMatch(mime, @"^(image|video)/[A-Za-z0-9.+-]+$")) spec["mediaType"] = mime;
         }
         else if (spec.ContainsKey("media")) throw new InvalidOperationException("Missing media");
         spec.Remove("frames");

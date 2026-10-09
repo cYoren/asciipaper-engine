@@ -347,7 +347,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
           return;
         }
         if (!frame) {
-          const w = Math.min(256, w0), h = Math.max(1, Math.round(w * h0 / w0));
+          const k = Math.min(1, 256 / Math.max(w0, h0)), w = Math.max(1, Math.round(w0 * k)), h = Math.max(1, Math.round(h0 * k));   // 256 px on the longer side
           frame = Object.assign(document.createElement('canvas'), {width: w, height: h}).getContext('2d', {willReadFrequently: true});
         }
         const {width, height} = frame.canvas;

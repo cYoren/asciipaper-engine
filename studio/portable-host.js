@@ -44,6 +44,7 @@ window.portableReady = (async () => {
   }
   for (const record of saved) materialize(record.name, record.project);
   if (!state.library.some(w => w.name === state.current)) state.current = 'synthwave';
+  if (apple) apply(state.current).catch(console.error);   // macOS: the desktop window lives in this process, so bring the saved wallpaper back
   const snapshot = () => structuredClone(state);
   const freshName = title => { const stem = title.toLowerCase().replace(/[^a-z0-9_-]/g,'-').slice(0,40) || 'wallpaper'; let n=stem,i=1; while (state.library.some(w=>w.name===n)) n=stem+'-'+ ++i; return n; };
   async function store(name,p) { p=P.validate(p); await transact('readwrite',s=>s.put({name,project:p},name)); materialize(name,p); return p; }
@@ -65,7 +66,9 @@ window.portableReady = (async () => {
   }
   async function importFile(file) {
     if (file.size > P.MAX_MEDIA) throw new Error('Maximum media size is 64 MiB');
-    if (/\.asciipaper\.json$/i.test(file.name) || file.type === 'application/json') return methods.importProject({project:JSON.parse(await file.text())});
+    if (/\.asciipaper\.json$/i.test(file.name) || file.type === 'application/json') {   // a whole project: nothing to port
+      await methods.importProject({project:JSON.parse(await file.text())}); listeners.state?.(snapshot()); return null;
+    }
     if (!/^(image|video)\//.test(file.type)) throw new Error('Choose an image, GIF or video');
     const name=freshName(file.name.replace(/\.[^.]+$/,'')), shader=await (await fetch(new URL('lib/media.glsl',WP))).text();
     const p=P.create({title:file.name,shader,media:'media/media',cell:8,aspect:.55,charset:' .:-=+*#%@'}, {name:'source'+(file.name.match(/\.[a-z0-9]+$/i)?.[0] || '.bin'),mime:file.type,data:await P.base64(file)});
@@ -88,7 +91,7 @@ window.portableReady = (async () => {
     openFolder:()=>{throw new Error('Use Import project and Save project to manage portable files');},
     saveThumb:({name,data})=>{const w=state.library.find(w=>w.name===name);if(w)w.thumb=data;return data;},
     copyBuiltin:async ({name})=>{const p=await projectOf(name),n=freshName(name+'-mine');await store(n,p);return {name:n,state:snapshot()};},
-    saveSpec:async ({name,spec})=>{const old=projects.get(name);const s=structuredClone(spec);if(old?.media)s.media='media/'+old.media.name;await store(name,P.create(s,old?.media||null));if(state.current===name)await apply(name);return true;},
+    saveSpec:async ({name,spec})=>{const old=projects.get(name);const s=structuredClone(spec);if(old?.media)s.media='media/'+old.media.name;await store(name,P.create(s,old?.media||null));if(state.current===name)await apply(name);listeners.state?.(snapshot());return true;}, // its blob URLs changed: hand Studio the fresh ones
     remove:async ({name})=>{if(!projects.has(name))throw new Error('Built-in wallpapers cannot be deleted');await transact('readwrite',s=>s.delete(name));projects.delete(name);revoke(name);state.library=state.library.filter(w=>w.name!==name);if(state.current===name)await apply('synthwave');return snapshot();},
     pickMedia:async ()=>{const f=await pick('image/*,video/*');if(f)await importFile(f);return null;},
     importUrl:async ({url})=>{

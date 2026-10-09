@@ -76,11 +76,11 @@ public class MainActivity extends Activity implements SharedPreferences.OnShared
         controls.addView(label("Wallpaper"));
         controls.addView(choice(titles(wallpapers), wallpapers,
                 prefs.getString(WallpaperService.WALLPAPER, WallpaperService.DEFAULT_WALLPAPER),
-                value -> prefs.edit().putString(WallpaperService.WALLPAPER, value).apply()));
+                value -> prefs.edit().remove("project").putString(WallpaperService.WALLPAPER, value).apply()));
         controls.addView(label("Style"));
         controls.addView(choice(styleLabels, styles,
                 prefs.getString(WallpaperService.STYLE, WallpaperService.DEFAULT_STYLE),
-                value -> prefs.edit().putString(WallpaperService.STYLE, value).apply()));
+                value -> prefs.edit().remove("project").putString(WallpaperService.STYLE, value).apply()));
         editor = column();
         controls.addView(editor);
         rebuildEditor();
@@ -153,7 +153,7 @@ public class MainActivity extends Activity implements SharedPreferences.OnShared
             }
             Button reset = new Button(this);
             reset.setText("Reset this look");
-            reset.setOnClickListener(v -> { prefs.edit().remove(WallpaperService.editsKey(prefs)).apply(); rebuildEditor(); });
+            reset.setOnClickListener(v -> { prefs.edit().remove("project").remove(WallpaperService.editsKey(prefs)).apply(); rebuildEditor(); });
             editor.addView(reset);
             Button share = new Button(this);
             share.setText("Share look code");
@@ -181,7 +181,7 @@ public class MainActivity extends Activity implements SharedPreferences.OnShared
                 effects.put(key.substring(3), value);
                 edits.put("effects", effects);
             } else edits.put(key, value);
-            prefs.edit().putString(storage, edits.toString()).apply();
+            prefs.edit().remove("project").putString(storage, edits.toString()).apply();
         } catch (Exception e) { error(e); }
     }
 
@@ -221,7 +221,7 @@ public class MainActivity extends Activity implements SharedPreferences.OnShared
                 JSONObject edits = Look.recipeEdits(getAssets(), new JSONObject(Recipe.decode(input.getText().toString())));
                 Look.fromSpec(getAssets(), Look.spec(getAssets(), prefs.getString(WallpaperService.WALLPAPER, WallpaperService.DEFAULT_WALLPAPER),
                         prefs.getString(WallpaperService.STYLE, WallpaperService.DEFAULT_STYLE), edits));
-                prefs.edit().putString(WallpaperService.editsKey(prefs), edits.toString()).apply();
+                prefs.edit().remove("project").putString(WallpaperService.editsKey(prefs), edits.toString()).apply();
                 rebuildEditor(); dialog.dismiss();
             } catch (Exception e) { input.setError(e.getMessage()); }
         }));

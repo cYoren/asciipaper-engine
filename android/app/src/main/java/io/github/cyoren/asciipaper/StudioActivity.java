@@ -75,19 +75,25 @@ public final class StudioActivity extends Activity {
                     case "apply": {
                         JSONObject project=p.optJSONObject("project");
                         android.content.SharedPreferences prefs=getSharedPreferences(WallpaperService.PREFS,MODE_PRIVATE);
-                        if(project==null){String name=p.getString("name");NativeScene.spec(name);prefs.edit().remove("project").putString(WallpaperService.WALLPAPER,name).apply();}
+                        File folder=new File(getFilesDir(),"media");
+                        if(project==null){String name=p.getString("name");NativeScene.spec(name);prefs.edit().remove("project").putString(WallpaperService.WALLPAPER,name).apply();keepOnly(folder,null);}
                         else {
                             JSONObject s=new JSONObject(project.getJSONObject("spec").toString());String shader=s.getString("shader");
                             if(!shader.matches("(?s).*\\bcell\\s*\\(.*")||shader.length()>262144)throw new IllegalArgumentException("Invalid embedded shader");
                             JSONObject media=project.optJSONObject("media");
-                            if(media!=null){String data=media.getString("data"),name=media.getString("name");
+                            File target=null;
+                            if(media!=null){String data=media.getString("data"),name=media.getString("name"),mime=media.optString("mime");
                                 if(data.length()>89478488||!name.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")||name.contains(".."))throw new IllegalArgumentException("Invalid media");
+                                // The decoder goes by extension, so the cached file takes the declared type's (a GIF named source.bin stays a GIF).
+                                String ext=mime.matches("(image|video)/[A-Za-z0-9.+-]+")?MimeTypeMap.getSingleton().getExtensionFromMimeType(mime):null;
+                                if(ext!=null)name=name.replaceFirst("\\.[A-Za-z0-9]+$","")+"."+ext;
                                 byte[] bytes=android.util.Base64.decode(data,android.util.Base64.DEFAULT);
                                 byte[] digest=java.security.MessageDigest.getInstance("SHA-256").digest(bytes);StringBuilder hash=new StringBuilder();for(byte b:digest)hash.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
-                                File folder=new File(getFilesDir(),"media");folder.mkdirs();File target=new File(folder,hash+"-"+name);
+                                folder.mkdirs();target=new File(folder,hash+"-"+name);
                                 if(!target.exists())Files.write(target.toPath(),bytes);s.put("mediaPath",target.getAbsolutePath());
                             }
                             Look.fromSpec(getAssets(),s);prefs.edit().putString("project",s.toString()).apply();
+                            keepOnly(folder,target);   // only the wallpaper on screen needs its media cached; the library keeps the originals
                         }return "{}";
                     }
                     case "wallpaper":runOnUiThread(()->startActivity(new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,new ComponentName(StudioActivity.this,WallpaperService.class))));return "{}";
@@ -114,4 +120,6 @@ public final class StudioActivity extends Activity {
     @Override protected void onPause(){web.evaluateJavascript("window.paperVisibility?.(true)",null);web.onPause();super.onPause();}
     @Override protected void onResume(){super.onResume();if(web!=null){web.onResume();web.evaluateJavascript("window.paperVisibility?.(false)",null);}}
     @Override protected void onDestroy(){if(chooser!=null)chooser.onReceiveValue(null);web.removeJavascriptInterface("AndroidPaper");web.destroy();if(export!=null)export.delete();super.onDestroy();}
+
+    private static void keepOnly(File folder,File keep){File[] files=folder.listFiles();if(files!=null)for(File f:files)if(!f.equals(keep))f.delete();}
 }
