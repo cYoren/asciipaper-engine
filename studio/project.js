@@ -48,7 +48,7 @@
     const s = copy(spec), url = new URL(base, location.href);
     if (!/\bcell\s*\(/.test(s.shader || '')) {
       const shader = s.shader === 'media' || (!s.shader && s.media) ? new URL('../wallpapers/lib/media.glsl', location.href) : new URL(s.shader, url);
-      const r = await fetch(shader); if (!r.ok) throw new Error('Missing shader'); s.shader = await r.text();
+      const r = await fetch(shader); if (!r.ok) throw new Error('Missing shader: '+shader.href+' (status '+r.status+')'); s.shader = await r.text();
     }
     const catalog = await (await fetch(new URL('../wallpapers/lib/looks.json', location.href))).json();
     if (s.charset in catalog.charsets) s.charset = catalog.charsets[s.charset];

@@ -217,8 +217,19 @@ final class PaperAssets: NSObject, WKURLSchemeHandler {
             let data = try Data(contentsOf:file,options:.mappedIfSafe)
             let ext = file.pathExtension
             let mime = ext == "js" ? "text/javascript" : ext == "glsl" ? "text/plain" : UTType(filenameExtension:ext)?.preferredMIMEType ?? "application/octet-stream"
-            task.didReceive(URLResponse(url:url,mimeType:mime,expectedContentLength:data.count,textEncodingName:mime.hasPrefix("text/") || ext == "json" ? "utf-8" : nil))
-            task.didReceive(data); task.didFinish()
+            var headers=["Content-Type":mime+(mime.hasPrefix("text/") || ext == "json" ? "; charset=utf-8" : ""),"Access-Control-Allow-Origin":"*","Accept-Ranges":"bytes"]
+            var status=200,payload=data
+            if let range=task.request.value(forHTTPHeaderField:"Range"),range.hasPrefix("bytes=") {
+                let parts=range.dropFirst(6).split(separator:"-",omittingEmptySubsequences:false)
+                if parts.count==2,let start=Int(parts[0]),start>=0,start<data.count {
+                    let end=min(Int(parts[1]) ?? data.count-1,data.count-1)
+                    if end>=start { status=206;payload=data.subdata(in:start..<(end+1));headers["Content-Range"]="bytes \(start)-\(end)/\(data.count)" }
+                }
+            }
+            headers["Content-Length"]=String(payload.count)
+            // Fetch exposes status 0 for a generic URLResponse, so .ok checks fail.
+            task.didReceive(HTTPURLResponse(url:url,statusCode:status,httpVersion:"HTTP/1.1",headerFields:headers)!)
+            task.didReceive(payload); task.didFinish()
         } catch { task.didFailWithError(error) }
     }
     func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {}

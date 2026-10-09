@@ -93,7 +93,7 @@ public final class StudioActivity extends Activity {
                     case "wallpaper":runOnUiThread(()->startActivity(new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,new ComponentName(StudioActivity.this,WallpaperService.class))));return "{}";
                     case "quickEditor":runOnUiThread(()->startActivity(new Intent(StudioActivity.this,MainActivity.class)));return "{}";
                     case "pause":getSharedPreferences(WallpaperService.PREFS,MODE_PRIVATE).edit().putBoolean("paused",p.optBoolean("paused",false)).apply();return "{}";
-                    case "options":getSharedPreferences(WallpaperService.PREFS,MODE_PRIVATE).edit().putInt("fps",p.optInt("fps",24)).putInt("idleFps",p.optInt("idleFps",12)).putFloat("pointer",(float)p.optDouble("pointer",1)).putBoolean("clicks",p.optBoolean("clicks",false)).apply();return "{}";
+                    case "options":getSharedPreferences(WallpaperService.PREFS,MODE_PRIVATE).edit().putInt("fps",p.optInt("fps",24)).putInt("idleFps",p.optInt("idleFps",12)).putFloat("pointer",(float)p.optDouble("pointer",1)).putFloat("quality",(float)p.optDouble("quality",1)).putBoolean("clicks",p.optBoolean("clicks",false)).apply();return "{}";
                     case "saveFile":{
                         String data=p.getString("data");if(data.length()>128*1024*1024)throw new IllegalArgumentException("File is too large");
                         if(export!=null)throw new IllegalStateException("Finish the current export first");

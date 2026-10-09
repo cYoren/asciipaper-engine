@@ -44,7 +44,8 @@ static class Library
         }
         // HTML wallpapers in the library load ./lib/asciipaper.js: keep them on the current runtime.
         Directory.CreateDirectory(Path.Combine(Folder, "lib"));
-        File.Copy(Path.Combine(App, @"wallpapers\lib\asciipaper.js"), Path.Combine(Folder, @"lib\asciipaper.js"), true);
+        foreach(var file in Directory.GetFiles(Path.Combine(App,@"wallpapers\lib")))
+            File.Copy(file,Path.Combine(Folder,"lib",Path.GetFileName(file)),true);
         File.WriteAllText(stamp, build);
     }
 

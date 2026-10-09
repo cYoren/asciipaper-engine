@@ -70,7 +70,7 @@ public class WallpaperService extends android.service.wallpaper.WallpaperService
 
         @Override public void onSharedPreferenceChanged(SharedPreferences prefs, String key) {
             if (pacer == null) return;
-            if (key.equals("fps") || key.equals("idleFps") || key.equals("pointer") || key.equals("paused") || key.equals("clicks")) {
+            if (key.equals("fps") || key.equals("idleFps") || key.equals("pointer") || key.equals("paused") || key.equals("clicks") || key.equals("quality")) {
                 pacer.configure(prefs);
                 renderer.pointerStrength = prefs.getFloat("pointer", 1);
                 return;
@@ -90,7 +90,7 @@ public class WallpaperService extends android.service.wallpaper.WallpaperService
         @Override protected void dump(String prefix, java.io.FileDescriptor fd, java.io.PrintWriter out, String[] args) {
             super.dump(prefix, fd, out, args);
             if (renderer != null && pacer != null)
-                out.println(prefix + "asciipaper frames=" + renderer.frameCount + " " + pacer.diagnostics() + " mediaFrames=" + renderer.mediaFrames());
+                out.println(prefix + "asciipaper frames=" + renderer.frameCount + " " + pacer.diagnostics() + " mediaFrames=" + renderer.mediaFrames() + " render=" + renderer.renderSize());
         }
     }
 }

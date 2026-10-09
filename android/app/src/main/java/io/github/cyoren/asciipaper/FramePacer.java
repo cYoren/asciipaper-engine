@@ -55,6 +55,7 @@ final class FramePacer implements SurfaceHolder.Callback {
     void configure(SharedPreferences prefs) {
         userPaused=prefs.getBoolean("paused",false);
         renderer.clicksEnabled=prefs.getBoolean("clicks",false);
+        renderer.setQuality(prefs.getFloat("quality",1));
         policy = new FramePolicy(prefs.getInt("fps", FramePolicy.DEFAULT_FPS),
                 prefs.getInt("idleFps", FramePolicy.DEFAULT_IDLE_FPS));
         reschedule();

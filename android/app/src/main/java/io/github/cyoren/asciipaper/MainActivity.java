@@ -186,7 +186,7 @@ public class MainActivity extends Activity implements SharedPreferences.OnShared
     }
 
     @Override public void onSharedPreferenceChanged(SharedPreferences p, String key) {
-        if (key.equals("fps") || key.equals("idleFps") || key.equals("pointer")) { configure(); return; }
+        if (key.equals("fps") || key.equals("idleFps") || key.equals("pointer") || key.equals("quality") || key.equals("paused") || key.equals("clicks")) { configure(); return; }
         try { renderer.setLook(WallpaperService.chosen(this)); pacer.refresh(); }
         catch (Exception e) { error(e); }
         if (key.equals(WallpaperService.WALLPAPER) || key.equals(WallpaperService.STYLE)) rebuildEditor();

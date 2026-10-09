@@ -29,6 +29,10 @@ final class Renderer implements GLSurfaceView.Renderer {
     private Look look;
     private final AtomicReference<Look> pending = new AtomicReference<>();
     private int cellProg, glyphProg, fbo, cellsTex, atlasTex;
+    private int outputTex, outputFbo, blitProg;
+    private volatile float quality=1;
+    private float renderedQuality;
+    private volatile int renderWidth,renderHeight;
     private int width, height, cols, rows, tile, atlasW, atlasH;
     private float cw, ch, time;
     private long previous;
@@ -60,6 +64,8 @@ final class Renderer implements GLSurfaceView.Renderer {
     void resetClock() { resetClock = true; }
     void setActive(boolean on) { active=on; MediaFrames m=media;if(m!=null)m.active(on); }
     long mediaFrames() { MediaFrames m=media;return m==null?0:m.decodedFrames; }
+    void setQuality(float value) { quality=Float.isFinite(value)?Math.max(.5f,Math.min(2,value)):1; }
+    String renderSize() { return renderWidth+"x"+renderHeight; }
 
     void touch(float x, float y, boolean pressed) {
         long now = SystemClock.uptimeMillis();
@@ -76,13 +82,13 @@ final class Renderer implements GLSurfaceView.Renderer {
         if (media != null) { media.close(); media=null; }
         ready = false;   // a new context: everything is rebuilt
         previous = 0;
-        cellProg = glyphProg = 0;
+        cellProg = glyphProg = blitProg = 0;
         locations.clear();
         pending.compareAndSet(null, look);
-        int[] ids = new int[2];
-        GLES20.glGenTextures(2, ids, 0); cellsTex = ids[0]; atlasTex = ids[1];
-        GLES20.glGenFramebuffers(1, ids, 0); fbo = ids[0];
-        for (int t : new int[]{cellsTex, atlasTex}) {
+        int[] ids = new int[3];
+        GLES20.glGenTextures(3, ids, 0); cellsTex = ids[0]; atlasTex = ids[1]; outputTex=ids[2];
+        GLES20.glGenFramebuffers(2, ids, 0); fbo = ids[0];outputFbo=ids[1];
+        for (int t : new int[]{cellsTex, atlasTex, outputTex}) {
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, t);
             int filter = t == cellsTex ? GLES20.GL_NEAREST : GLES20.GL_LINEAR;
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, filter);
@@ -105,6 +111,7 @@ final class Renderer implements GLSurfaceView.Renderer {
             try { use(next); } catch (RuntimeException e) { Log.e("asciipaper", "can't draw this look", e); }
         }
         if (!ready) { GLES20.glClearColor(0, 0, 0, 1); GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT); return; }
+        if(renderedQuality!=quality)layoutOutput();
         long now = SystemClock.uptimeMillis();
         float dt = previous == 0 || resetClock ? 0 : Math.min(1, (now - previous) / 1000f);
         resetClock = false;
@@ -129,11 +136,17 @@ final class Renderer implements GLSurfaceView.Renderer {
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, fbo);
         GLES20.glViewport(0, 0, cols, rows);
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
-        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
-        GLES20.glViewport(0, 0, width, height);
+        boolean scaled=renderWidth!=width||renderHeight!=height;
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, scaled?outputFbo:0);
+        GLES20.glViewport(0, 0, renderWidth, renderHeight);
         GLES20.glUseProgram(glyphProg);
         u(glyphProg, "time", time);
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
+        if(scaled){
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER,0);GLES20.glViewport(0,0,width,height);
+            GLES20.glUseProgram(blitProg);GLES20.glActiveTexture(GLES20.GL_TEXTURE7);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,outputTex);
+            GLES20.glUniform1i(loc(blitProg,"image"),7);GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP,0,4);
+        }
         frameCount++;
     }
 
@@ -163,7 +176,7 @@ final class Renderer implements GLSurfaceView.Renderer {
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, fbo);
         GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D, cellsTex, 0);
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
-        buildAtlas();
+        layoutOutput();
 
         int glyphs = look.charset.codePointCount(0, look.charset.length());
         GLES20.glUseProgram(glyphProg);
@@ -185,11 +198,34 @@ final class Renderer implements GLSurfaceView.Renderer {
         ready = true;
     }
 
-    void dispose() { if(nativeScene != 0) { NativeScene.destroy(nativeScene); nativeScene=0; } if(media!=null){media.close();media=null;} }
+    void dispose() {
+        if(nativeScene != 0) { NativeScene.destroy(nativeScene); nativeScene=0; }
+        if(media!=null){media.close();media=null;}
+        for(int p:new int[]{cellProg,glyphProg,blitProg})if(p!=0)GLES20.glDeleteProgram(p);
+        GLES20.glDeleteTextures(3,new int[]{cellsTex,atlasTex,outputTex},0);
+        GLES20.glDeleteFramebuffers(2,new int[]{fbo,outputFbo},0);ready=false;
+    }
+
+    private void layoutOutput() {
+        int[] limit=new int[1];GLES20.glGetIntegerv(GLES20.GL_MAX_TEXTURE_SIZE,limit,0);
+        float requested=quality,scale=Math.min(requested,(float)limit[0]/Math.max(width,height));
+        renderWidth=Math.max(1,Math.round(width*scale));renderHeight=Math.max(1,Math.round(height*scale));renderedQuality=requested;
+        if(renderWidth!=width||renderHeight!=height){
+            if(blitProg==0)blitProg=program("precision mediump float;varying vec2 v_uv;uniform sampler2D image;void main(){gl_FragColor=texture2D(image,v_uv);}");
+            if(blitProg==0)throw new IllegalStateException("Output shader failed");
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE7);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,outputTex);
+            GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D,0,GLES20.GL_RGBA,renderWidth,renderHeight,0,GLES20.GL_RGBA,GLES20.GL_UNSIGNED_BYTE,null);
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER,outputFbo);GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER,GLES20.GL_COLOR_ATTACHMENT0,GLES20.GL_TEXTURE_2D,outputTex,0);
+            if(GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER)!=GLES20.GL_FRAMEBUFFER_COMPLETE)throw new IllegalStateException("Output framebuffer failed");
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER,0);
+        }
+        buildAtlas();GLES20.glUseProgram(glyphProg);
+        u2(glyphProg,"cell",cw,ch);u2(glyphProg,"atlasSize",atlasW,atlasH);u(glyphProg,"tile",tile);
+    }
 
     // Glyphs rasterized at the exact cell size in device pixels, laid out as asciipaper.js does.
     private void buildAtlas() {
-        cw = (float) width / cols; ch = (float) height / rows;
+        cw = (float) renderWidth / cols; ch = (float) renderHeight / rows;
         int n = look.charset.codePointCount(0, look.charset.length());
         tile = (int) Math.ceil(cw) + PAD * 2;
         int[] limit=new int[1];GLES20.glGetIntegerv(GLES20.GL_MAX_TEXTURE_SIZE,limit,0);
