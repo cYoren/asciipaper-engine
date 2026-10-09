@@ -1,0 +1,9 @@
+{
+  "title": "yin-yang",
+  "scene": "yin-yang",
+  "shader": "uniform vec2 center;uniform float radius,rot,moving;uniform sampler2D flow;\nvec4 cell(vec2 uv){\n  vec3 f=moving>0.5?(texture2D(flow,uv).rgb-vec3(0.5,0.5,0.0))*vec3(0.36,0.36,0.8):vec3(0.0);\n  vec2 s=(uv-f.xy*0.9)*u_size-center;\n  float ca=cos(rot),sa=sin(rot);\n  vec2 q=vec2(s.x*ca+s.y*sa,-s.x*sa+s.y*ca)/radius;\n  float r=length(q);\n  float ring=0.0;\n  for(int i=0;i<8;i++){vec3 k=u_clicks[i];\n    if(k.z<1.3)ring=max(ring,(1.0-k.z/1.3)*step(abs(length((uv-k.xy)*u_size)-k.z*0.7*radius),5.0));}\n  if(ring>0.0)return vec4(vec3(143.0,230.0,218.0)/255.0*ring*0.7+0.1,1.0);\n  if(r>1.035)return vec4(vec3(143.0,230.0,218.0)/255.0*f.z,f.z*0.5);\n  bool white=q.x-0.42*sin(3.14159265*q.y)<0.0;\n  if(length(q-vec2(0.0,0.5))<0.14)white=false;\n  if(length(q+vec2(0.0,0.5))<0.14)white=true;\n  float grain=(sin(q.x*32.0+q.y*17.0)+cos(q.y*29.0-q.x*13.0))*0.5;\n  float shade=clamp(floor((r>0.92?0.55:0.58+grain*0.12)*22.0),0.0,22.0);\n  float glow=max(0.0,1.0-length(s/u_size)*2.3)+f.z*0.8;\n  vec3 color=white?(vec3(196.0,208.0,206.0)+glow*vec3(59.0,47.0,49.0))/255.0\n                  :(vec3(30.0,91.0,91.0)+glow*vec3(24.0,55.0,55.0))/255.0;\n  return vec4(color,shade/23.0);\n}\n",
+  "charset": " .,:;irsXA253hMHGS#9B&@·",
+  "background": "#080909",
+  "cell": 9,
+  "aspect": 0.6
+}

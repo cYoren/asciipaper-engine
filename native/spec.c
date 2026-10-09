@@ -32,6 +32,7 @@ struct spec {
     size_t mapped;
     int fw, fh, fcount;
     float fps;
+    const struct preset *legacy;
 };
 static struct spec *current;
 
@@ -73,13 +74,8 @@ static void set_uniforms(struct spec *s, const struct json *object) {
     }
 }
 
-// Look names, by index: the same tables as lib/asciipaper.js. A spec may also give the index.
-static const char *const SHAPES[] = {"glyph", "pixel", "mosaic", "dots", "led", "lego", "cross", "diamond", "lines",
-                                     "diagonal", "voxel", "disco", "cmyk", NULL};
-static const char *const DITHERS[] = {"none", "bayer2", "bayer4", "bayer8", "bayer16", "halftone", "radial", "linesH",
-                                      "linesV", "linesD", "whiteNoise", "blueNoise", NULL};
-static const char *const FX[] = {"vignette", "scanlines", "crt", "rgbSplit", "grain", "glitch", "bloom", "dust",
-                                 "saturation", "hue", "flicker", NULL};
+// Shared look indices, generated from looks.json.
+#include "look_names.h"
 
 static float named(const struct json *j, const char *key, const char *const *names) {
     const struct json *v = json_get(j, key);
@@ -118,6 +114,11 @@ static void map_frames(struct spec *s, const char *path) {
 
 static void spec_update(struct scene *scene, float dt) {
     struct spec *s = current;
+    if (s->legacy) {
+        if (s->legacy->update) s->legacy->update(scene, dt);
+        for (int k = 0; k < s->nuniforms; k++) scene_uniform(scene, s->uniforms[k].name, s->uniforms[k].n, s->uniforms[k].v);
+        return;
+    }
     for (int k = 0; k < s->nuniforms; k++) scene_uniform(scene, s->uniforms[k].name, s->uniforms[k].n, s->uniforms[k].v);
     if (!s->frames) {   // bind something, or a `media` sampler would read the frame being drawn
         static const uint8_t black[3];
@@ -149,7 +150,7 @@ const struct preset *spec_load(const char *path, const char *lib, char *shader_f
     char *glsl = NULL;
     shader_file[0] = 0;
     if (!shader) fprintf(stderr, "asciipaper-engine: %s needs a \"shader\" or \"media\"\n", path);
-    else if (strstr(shader, "cell(")) glsl = strdup(shader);
+    else if (strchr(shader, '{')) glsl = strdup(shader);
     else {
         if (!strcmp(shader, "media")) snprintf(file, sizeof file, "%s/media.glsl", lib);
         else if (shader[0] == '/') snprintf(file, sizeof file, "%s", shader);
@@ -182,6 +183,17 @@ const struct preset *spec_load(const char *path, const char *lib, char *shader_f
         .weight = fmin(900, fmax(0, json_number(j, "weight", 0))),
     };
     s->preset.shape = named(j, "shape", SHAPES);
+    const char *scene = json_string(j, "scene", NULL);
+    for (int i = 0; scene && presets[i]; i++) if (!strcmp(scene, presets[i]->name)) {
+        s->legacy = presets[i];
+        s->preset.resize = s->legacy->resize;
+        s->preset.pointer_move = s->legacy->pointer_move;
+        s->preset.pointer_down = s->legacy->pointer_down;
+        s->preset.pointer_leave = s->legacy->pointer_leave;
+        s->preset.lut = s->legacy->lut;
+        if (!s->legacy->glsl) { free(glsl); s->preset.glsl = NULL; }
+        break;
+    }
     s->preset.dither = named(j, "dither", DITHERS);
     const struct json *palette = json_get(j, "palette");
     for (int i = 0; palette && palette->type == JSON_ARRAY && i < palette->count && s->preset.npalette < 16; i++)

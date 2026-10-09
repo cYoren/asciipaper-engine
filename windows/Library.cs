@@ -44,7 +44,8 @@ static class Library
         }
         // HTML wallpapers in the library load ./lib/asciipaper.js: keep them on the current runtime.
         Directory.CreateDirectory(Path.Combine(Folder, "lib"));
-        File.Copy(Path.Combine(App, @"wallpapers\lib\asciipaper.js"), Path.Combine(Folder, @"lib\asciipaper.js"), true);
+        foreach(var file in Directory.GetFiles(Path.Combine(App,@"wallpapers\lib")))
+            File.Copy(file,Path.Combine(Folder,"lib",Path.GetFileName(file)),true);
         File.WriteAllText(stamp, build);
     }
 
@@ -86,6 +87,34 @@ static class Library
     }
 
     public static bool Valid(string name) => name != null && NameRe.IsMatch(name);
+    public static string ImportProject(Dictionary<string, object> project)
+    {
+        if (project == null || project.Str("format") != "asciipaper.project" || project.Num("version", 0) != 1)
+            throw new InvalidOperationException("Unsupported project version");
+        if (!project.TryGetValue("spec", out var raw) || raw is not Dictionary<string, object> spec ||
+            !Regex.IsMatch(spec.Str("shader", ""), @"\bcell\s*\(") || spec.Str("shader", "").Length > 262144) throw new InvalidOperationException("Missing embedded shader");
+        var name = NewName(project.Str("title", "wallpaper"));
+        string mediaFile = null;
+        if (project.TryGetValue("media", out var m) && m is Dictionary<string, object> media)
+        {
+            var file = media.Str("name", "");
+            if (!Regex.IsMatch(file, @"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$") || file.Contains("..")) throw new InvalidOperationException("Invalid media name");
+            var data = media.Str("data", "");
+            if (data.Length > 89478488) throw new InvalidOperationException("Maximum media size is 64 MiB");
+            var bytes = Convert.FromBase64String(data);
+            if (bytes.Length > 64 * 1024 * 1024) throw new InvalidOperationException("Maximum media size is 64 MiB");
+            mediaFile = Path.Combine(Media, name + "-" + file);
+            File.WriteAllBytes(mediaFile, bytes);
+            spec["media"] = "media/" + Path.GetFileName(mediaFile);
+            var mime = media.Str("mime", "");   // the name need not match the type (source.bin can be a PNG)
+            if (Regex.IsMatch(mime, @"^(image|video)/[A-Za-z0-9.+-]+$")) spec["mediaType"] = mime;
+        }
+        else if (spec.ContainsKey("media")) throw new InvalidOperationException("Missing media");
+        spec.Remove("frames");
+        try { SaveSpec(name, spec); }
+        catch { if (mediaFile != null) File.Delete(mediaFile); throw; }
+        return name;
+    }
     public static string SpecPath(string name) => Path.Combine(Folder, name + ".json");
     static string Url(string relative) => "/" + string.Join("/", relative.Split('/').Select(Uri.EscapeDataString));
 
@@ -99,7 +128,7 @@ static class Library
     // Every wallpaper, as the Studio shows it. `url` runs it; `spec` is its JSON, if it has one.
     public static List<Dictionary<string, object>> List()
     {
-        var list = Presets.Select(n => new Dictionary<string, object> {
+        var list = Presets.Where(n => !IsBuiltinSpec(n)).Select(n => new Dictionary<string, object> {
             ["name"] = n, ["title"] = n, ["kind"] = "preset", ["own"] = false,
             ["url"] = Url($"app/wallpapers/{n}.html"),
             ["thumb"] = File.Exists(Path.Combine(App, $@"wallpapers\thumbnails\{n}.jpg")) ? Url($"app/wallpapers/thumbnails/{n}.jpg") : null }).ToList();
@@ -251,7 +280,7 @@ static class Library
             foreach (var key in new[] { "media", "shader" })
             {
                 var relative = data.Str(key);
-                if (relative == null || relative == "media" || relative.Contains("cell(")) continue;
+                if (relative == null || relative == "media" || Regex.IsMatch(relative, @"\bcell\s*\(")) continue;
                 var path = Path.GetFullPath(Path.Combine(Folder, relative));
                 if (path.StartsWith(Folder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) File.Delete(path);
             }

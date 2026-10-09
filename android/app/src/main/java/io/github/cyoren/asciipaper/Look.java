@@ -6,12 +6,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -19,15 +16,7 @@ import org.json.JSONObject;
 // A wallpaper ready to draw: a built-in shader wallpaper (wallpapers/specs/NAME.json) with a style from
 // wallpapers/lib/looks.json applied, as `asciipaper look NAME STYLE` does on Linux.
 final class Look {
-    // Look names, by index: the same tables as native/spec.c and lib/asciipaper.js.
-    static final List<String> SHAPES = Arrays.asList("glyph", "pixel", "mosaic", "dots", "led", "lego", "cross", "diamond",
-            "lines", "diagonal", "voxel", "disco", "cmyk");
-    static final List<String> DITHERS = Arrays.asList("none", "bayer2", "bayer4", "bayer8", "bayer16", "halftone", "radial",
-            "linesH", "linesV", "linesD", "whiteNoise", "blueNoise");
-    static final List<String> FX = Arrays.asList("vignette", "scanlines", "crt", "rgbSplit", "grain", "glitch", "bloom", "dust",
-            "saturation", "hue", "flicker");
-
-    String glsl, charset = " .:-=+*#%@", font;
+    String glsl, scene, media, charset = " .:-=+*#%@", font;
     float cell = 8, aspect = .6f, maxCells = 40000, fill, time, period = (float) (2000 * Math.PI), shape, dither;
     int weight;
     float[] background = {.03f, .035f, .035f}, palette = new float[0], effects = new float[12];
@@ -55,22 +44,103 @@ final class Look {
     }
 
     static Look load(AssetManager assets, String name, String style) throws IOException, JSONException {
-        JSONObject spec = new JSONObject(read(assets, "specs/" + name + ".json"));
-        JSONObject looks = looks(assets), uniforms = new JSONObject();
-        String shader = spec.getString("shader");
-        Look look = new Look();
-        look.glsl = shader.contains("cell(") ? shader : read(assets, "specs/" + shader);
-        if (look.glsl.startsWith("// defaults:")) merge(uniforms, new JSONObject(look.glsl.substring(12, look.glsl.indexOf('\n'))));
-        merge(uniforms, spec.optJSONObject("uniforms"));
+        return fromSpec(assets, spec(assets, name, style, null));
+    }
+
+    // Edits use the desktop spec's fields. Style defaults are applied before the
+    // user's overrides, so fine controls do not get reset on every frame/reload.
+    static JSONObject spec(AssetManager assets, String name, String style, JSONObject edits) throws IOException, JSONException {
+        JSONObject spec;
+        if (java.util.Arrays.asList("fluid","flow","matrix","yin-yang").contains(name)) {
+            try { spec = NativeScene.spec(name); } catch (Exception e) { throw new IOException(e); }
+        } else spec = new JSONObject(read(assets, "specs/" + name + ".json"));
+        JSONObject looks = looks(assets);
         if (style != null && looks.getJSONObject("styles").has(style)) {   // a style resets shape, dither, palette, effects
             JSONObject s = looks.getJSONObject("styles").getJSONObject(style);
             for (String key : new String[]{"shape", "dither", "palette", "effects"}) spec.remove(key);
             for (Iterator<String> keys = s.keys(); keys.hasNext(); ) {
                 String key = keys.next();
-                if (key.equals("uniforms")) merge(uniforms, s.getJSONObject(key));
+                if (key.equals("uniforms")) {
+                    JSONObject uniforms = spec.optJSONObject("uniforms");
+                    if (uniforms == null) uniforms = new JSONObject();
+                    merge(uniforms, s.getJSONObject(key));
+                    spec.put("uniforms", uniforms);
+                }
                 else if (!key.equals("about")) spec.put(key, s.get(key));
             }
         }
+        if (edits != null) {
+            JSONObject overrides = new JSONObject(edits.toString());
+            JSONObject uniforms = spec.optJSONObject("uniforms");
+            if (uniforms == null) uniforms = new JSONObject();
+            merge(uniforms, overrides.optJSONObject("uniforms"));
+            overrides.remove("uniforms");
+            merge(spec, overrides);
+            spec.put("uniforms", uniforms);
+        }
+        return spec;
+    }
+
+    static final String[] LOOK_KEYS = {"charset", "cell", "aspect", "maxCells", "background", "font", "fill", "weight",
+            "shape", "dither", "palette", "effects", "uniforms"};
+
+    // Normalize desktop look codes before persisting them. As on Windows, pasting
+    // applies the look to the current scene; an embedded shader is not executed.
+    static JSONObject recipeEdits(AssetManager assets, JSONObject recipe) throws IOException, JSONException {
+        JSONObject catalog = looks(assets), edits = new JSONObject();
+        edits.put("shape", "glyph"); edits.put("dither", "none");
+        edits.put("palette", new JSONArray()); edits.put("effects", new JSONObject());
+        for (String key : LOOK_KEYS) if (recipe.has(key)) edits.put(key, recipe.get(key));
+        for (String key : new String[]{"shape", "dither"}) {
+            String value = edits.getString(key);
+            if (key.equals("dither") && names(catalog.getJSONArray("diffusion")).contains(value)) value = "blueNoise";
+            if (!names(catalog.getJSONArray(key.equals("shape") ? "shapes" : "dithers")).contains(value))
+                throw new JSONException("Unknown " + key + ": " + value);
+            edits.put(key, value);
+        }
+        if (edits.has("charset")) {
+            String charset = edits.getString("charset");
+            if (catalog.getJSONObject("charsets").has(charset)) charset = catalog.getJSONObject("charsets").getString(charset);
+            if (charset.isEmpty() || charset.codePointCount(0, charset.length()) > 256) throw new JSONException("Use 1 to 256 characters");
+            edits.put("charset", charset);
+        }
+        for (String key : new String[]{"cell", "aspect", "maxCells", "fill", "weight"}) {
+            if (!edits.has(key)) continue;
+            double value = edits.getDouble(key);
+            double min = key.equals("cell") ? 1 : key.equals("aspect") ? .1 : key.equals("maxCells") ? 1 : 0;
+            double max = key.equals("cell") ? 128 : key.equals("aspect") ? 4 : key.equals("maxCells") ? 100000 : key.equals("weight") ? 900 : 1;
+            if (!Double.isFinite(value) || value < min || value > max) throw new JSONException("Invalid " + key);
+        }
+        if (edits.has("background") && !edits.getString("background").matches("#[0-9a-fA-F]{6}"))
+            throw new JSONException("Background must be #rrggbb");
+        Object palette = edits.get("palette");
+        if (palette instanceof String) {
+            palette = palette.equals("original") ? new JSONArray() : catalog.getJSONObject("palettes").getJSONArray((String) palette);
+            edits.put("palette", palette);
+        }
+        if (!(palette instanceof JSONArray) || ((JSONArray) palette).length() > 16) throw new JSONException("Use up to 16 palette colours");
+        for (int i = 0; i < ((JSONArray) palette).length(); i++)
+            if (!((JSONArray) palette).getString(i).matches("#[0-9a-fA-F]{6}")) throw new JSONException("Palette colours must be #rrggbb");
+        JSONObject effects = edits.getJSONObject("effects"), ranges = catalog.getJSONObject("effects");
+        for (String key : keys(effects)) {
+            JSONArray range = ranges.getJSONArray(key);
+            double value = effects.getDouble(key);
+            if (!Double.isFinite(value)) throw new JSONException("Invalid effect " + key);
+            effects.put(key, Math.max(range.getDouble(0), Math.min(range.getDouble(1), value)));
+        }
+        if (edits.has("uniforms")) edits.getJSONObject("uniforms");
+        return edits;
+    }
+
+    static Look fromSpec(AssetManager assets, JSONObject spec) throws IOException, JSONException {
+        JSONObject looks = looks(assets), uniforms = new JSONObject();
+        String shader = spec.optString("shader", spec.has("media") ? "media" : "");
+        Look look = new Look();
+        look.glsl = shader.matches("(?s).*\\bcell\\s*\\(.*") ? shader : read(assets, shader.equals("media") ? "lib/media.glsl" : "specs/" + shader);
+        look.scene = spec.optString("scene", "");
+        look.media = spec.optString("mediaPath", "");
+        if (look.glsl.startsWith("// defaults:")) merge(uniforms, new JSONObject(look.glsl.substring(12, look.glsl.indexOf('\n'))));
+        merge(uniforms, spec.optJSONObject("uniforms"));
         Object charset = spec.opt("charset");
         if (charset instanceof String) {
             JSONObject named = looks.getJSONObject("charsets");
@@ -84,8 +154,8 @@ final class Look {
         look.time = (float) spec.optDouble("time", 0);
         if (spec.optDouble("period", 0) > 0) look.period = (float) spec.getDouble("period");
         look.background = color(spec.optString("background", "#000000"));
-        look.shape = named(spec.opt("shape"), SHAPES);
-        look.dither = named(spec.opt("dither"), DITHERS);
+        look.shape = named(spec.opt("shape"), names(looks.getJSONArray("shapes")));
+        look.dither = named(spec.opt("dither"), names(looks.getJSONArray("dithers")));
         Object palette = spec.opt("palette");
         if (palette instanceof String) palette = looks.getJSONObject("palettes").optJSONArray((String) palette);
         if (palette instanceof JSONArray) {
@@ -94,9 +164,23 @@ final class Look {
             for (int i = 0; i < look.palette.length / 3; i++) System.arraycopy(color(colors.getString(i)), 0, look.palette, i * 3, 3);
         }
         JSONObject effects = spec.optJSONObject("effects");
-        for (int i = 0; effects != null && i < FX.size(); i++) look.effects[i] = (float) effects.optDouble(FX.get(i), 0);
+        // JSONObject iteration order is not part of the shader ABI.
+        List<String> fx = names(new JSONObject(read(assets, "lib/shaders/look-indices.json")).getJSONArray("FX"));
+        for (int i = 0; effects != null && i < fx.size(); i++) look.effects[i] = (float) effects.optDouble(fx.get(i), 0);
         look.uniforms = uniforms;
         return look;
+    }
+
+    static List<String> names(JSONArray array) throws JSONException {
+        List<String> names = new ArrayList<>();
+        for (int i = 0; i < array.length(); i++) names.add(array.getString(i));
+        return names;
+    }
+
+    static List<String> keys(JSONObject object) {
+        List<String> names = new ArrayList<>();
+        for (Iterator<String> keys = object.keys(); keys.hasNext(); ) names.add(keys.next());
+        return names;
     }
 
     static void merge(JSONObject into, JSONObject from) throws JSONException {
@@ -132,15 +216,9 @@ final class Look {
         return spaced.substring(0, 1).toUpperCase(Locale.ROOT) + spaced.substring(1);
     }
 
-    // The renderer's shaders, read from lib/asciipaper.js so all three renderers share one copy.
+    // Explicit GLSL assets, generated at development time; no runtime JS parsing.
     static String[] shaders(AssetManager assets) throws IOException {
-        String js = read(assets, "lib/asciipaper.js");
-        return new String[]{part(js, "HEADER", '`'), part(js, "QUAD", '\''), part(js, "CELL_MAIN", '`'), part(js, "GLYPHS", '`')};
-    }
-
-    private static String part(String js, String name, char quote) {
-        Matcher m = Pattern.compile("const " + name + " = " + quote + "([\\s\\S]*?)" + quote + ";").matcher(js);
-        if (!m.find()) throw new IllegalStateException("asciipaper.js has no " + name);
-        return m.group(1);
+        return new String[]{read(assets, "lib/shaders/header.glsl"), read(assets, "lib/shaders/quad.glsl"),
+                read(assets, "lib/shaders/cell_main.glsl"), read(assets, "lib/shaders/glyphs.glsl")};
     }
 }

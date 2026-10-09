@@ -37,6 +37,7 @@ struct preset {
 };
 
 extern const struct preset *const presets[];
+void preset_destroy(const struct preset *, struct scene *);
 
 // For update(): set a uniform the preset's GLSL declares, or upload an RGB (channels 3) or RGBA
 // (channels 4) texture it reads as `uniform sampler2D <name>` (row 0 = top).

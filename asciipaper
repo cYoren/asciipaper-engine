@@ -21,6 +21,8 @@ Usage:
   asciipaper styles          list the looks: styles, shapes, characters, dithers, palettes, effects, warps
   asciipaper look NAME STYLE|RECIPE|file.png [key=value …]  restyle a wallpaper, e.g. look rain lego effects.crt=0.5
   asciipaper recipe NAME     print a wallpaper's look as one shareable line
+  asciipaper project export NAME OUT.asciipaper.json  save a portable project with shader and media
+  asciipaper project import FILE [NAME]  import a project from any platform
   asciipaper text "HELLO" [NAME]  a wallpaper of big text, drawn in characters
   asciipaper mcp             MCP server (stdio): let Claude, Cursor or any MCP client design and switch wallpapers
 """
@@ -442,7 +444,7 @@ def spec_shader(spec, base):
     shader = spec.get("shader", "media" if spec.get("media") else None)
     if not isinstance(shader, str):
         sys.exit('asciipaper: a spec needs "shader" or "media"')
-    if "cell(" not in shader:
+    if not re.search(r"\bcell\s*\(", shader):
         path = LOCAL / "lib/media.glsl" if shader == "media" else base / shader
         shader = path.read_text(encoding="utf-8")
     defaults = {}
@@ -454,12 +456,124 @@ def spec_shader(spec, base):
     return shader, defaults
 
 
+def validate_project(project):
+    """Portable v1, matching studio/project.js; no external paths or platform caches."""
+    import base64
+    project = json.loads(json.dumps(project))
+    if not isinstance(project, dict) or project.get("format") != "asciipaper.project" or project.get("version") != 1:
+        raise ValueError("Unsupported ASCII Paper project version")
+    spec = project.get("spec")
+    if not isinstance(spec, dict) or not isinstance(spec.get("shader"), str) or not re.search(r"\bcell\s*\(", spec["shader"]) or len(spec["shader"]) > 262144:
+        raise ValueError("Missing embedded GLSL shader")
+    for key, low, high in [("cell", 1, 128), ("aspect", .1, 4), ("maxCells", 1, 100000), ("fill", 0, 1), ("weight", 100, 900), ("period", .001, 1e8), ("time", -1e8, 1e8)]:
+        if key in spec and (isinstance(spec[key], bool) or not isinstance(spec[key], (int, float)) or not math.isfinite(spec[key]) or not low <= spec[key] <= high):
+            raise ValueError(f"Invalid {key}")
+    if "charset" in spec and (not isinstance(spec["charset"], str) or not 1 <= len(spec["charset"]) <= 256):
+        raise ValueError("Use 1 to 256 characters")
+    if "background" in spec and (not isinstance(spec["background"], str) or not re.fullmatch(r"#[a-fA-F0-9]{6}", spec["background"])):
+        raise ValueError("Invalid background colour")
+    if "palette" in spec and (not isinstance(spec["palette"], list) or len(spec["palette"]) > 16 or any(not isinstance(c, str) or not re.fullmatch(r"#[a-fA-F0-9]{6}", c) for c in spec["palette"])):
+        raise ValueError("Invalid palette")
+    for key in ("uniforms", "effects"):
+        if key in spec and not isinstance(spec[key], dict):
+            raise ValueError(f"Invalid {key}")
+    for key, value in spec.get("uniforms", {}).items():
+        number = lambda n: isinstance(n, (int, float)) and not isinstance(n, bool) and math.isfinite(n)
+        valid = isinstance(value, bool) or number(value) or isinstance(value, str) and re.fullmatch(r"#[a-fA-F0-9]{6}", value) or isinstance(value, list) and 1 <= len(value) <= 4 and all(number(n) for n in value)
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", key) or not valid:
+            raise ValueError(f"Invalid uniform {key}")
+    if "scene" in spec and spec["scene"] not in ("fluid", "flow", "matrix", "yin-yang"):
+        raise ValueError("Unknown simulation scene")
+    media = project.get("media")
+    if media is not None:
+        if not isinstance(media, dict) or not isinstance(media.get("name"), str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", media["name"]) or ".." in media["name"]:
+            raise ValueError("Invalid media name")
+        if not isinstance(media.get("mime"), str) or not re.fullmatch(r"(?:image|video)/[A-Za-z0-9.+-]+", media["mime"]):
+            raise ValueError("Invalid media type")
+        data = media.get("data")
+        if not isinstance(data, str) or len(data) > 89478488 or len(data) % 4:
+            raise ValueError("Invalid media data")
+        try:
+            decoded = base64.b64decode(data, validate=True)
+        except Exception as error:
+            raise ValueError("Invalid media data") from error
+        if len(decoded) > 64 * 1024 * 1024:
+            raise ValueError("Maximum media size is 64 MiB")
+        spec["media"] = "media/" + media["name"]
+    elif spec.get("media"):
+        raise ValueError("The project is missing its media")
+    spec.pop("frames", None)
+    project["title"] = str(project.get("title") or spec.get("title") or "Wallpaper")[:128]
+    return project
+
+
+def export_project(target, destination):
+    import base64
+    import mimetypes
+    path = spec_file(target)
+    if path is None:
+        raise ValueError("Export a shader or media wallpaper; legacy HTML scenes do not have portable specs yet")
+    spec = read_spec(path)
+    spec["shader"] = spec_shader(spec, path.parent)[0]
+    if spec.get("charset") in CHARSETS:
+        spec["charset"] = CHARSETS[spec["charset"]]
+    if isinstance(spec.get("palette"), str):
+        spec["palette"] = PALETTES.get(spec["palette"], [])
+    media = None
+    if spec.get("media"):
+        file = (path.parent / spec["media"]).resolve()
+        if file.stat().st_size > 64 * 1024 * 1024:
+            raise ValueError("Maximum media size is 64 MiB")
+        media = {"name": re.sub(r"[^A-Za-z0-9._-]", "_", file.name), "mime": mimetypes.guess_type(file)[0] or "video/mp4", "data": base64.b64encode(file.read_bytes()).decode()}
+    project = validate_project({"format": "asciipaper.project", "version": 1, "spec": spec, "media": media})
+    Path(destination).expanduser().write_text(json.dumps(project, ensure_ascii=False) + "\n", encoding="utf-8")
+    return destination
+
+
+def import_project(source, name=None):
+    import base64
+    file = Path(source).expanduser()
+    if file.stat().st_size > 90 * 1024 * 1024:
+        raise ValueError("Project is too large")
+    project = validate_project(json.loads(file.read_text(encoding="utf-8")))
+    stem = name or re.sub(r"[^A-Za-z0-9_-]", "-", project["title"]).strip("_-")[:40] or "project"
+    if not re.fullmatch(NAME_RE, stem) or taken(stem):
+        if name:
+            raise ValueError("Choose a new wallpaper name")
+        original, i = stem, 2
+        while taken(stem):
+            stem = f"{original}-{i}"
+            i += 1
+    USER_WALLPAPERS.mkdir(parents=True, exist_ok=True)
+    spec, media = project["spec"], project.get("media")
+    created = []
+    try:
+        if media:
+            folder = USER_WALLPAPERS / "media"
+            folder.mkdir(exist_ok=True)
+            target = folder / (stem + "-" + media["name"])
+            if target.exists():
+                raise ValueError("Media destination already exists")
+            target.write_bytes(base64.b64decode(media["data"], validate=True))
+            created.append(target)
+            created.append(Path(str(target) + ".frames"))
+            make_frames(target)
+            spec["media"] = "media/" + target.name
+        destination = USER_WALLPAPERS / (stem + ".json")
+        destination.write_text(json.dumps(spec, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return stem
+    except BaseException:
+        for path in created:
+            path.unlink(missing_ok=True)
+        raise
+
+
 def spec_html(path):
     """Write (if changed) and return the web version of a spec: <name>.html beside it."""
     path = Path(path).resolve()
     spec = read_spec(path)
     glsl, defaults = spec_shader(spec, path.parent)
-    runtime = {key: spec[key] for key in ("charset", "cell", "aspect", "maxCells", "background", "font", "time", "period", "fill", "weight",
+    runtime = {key: spec[key] for key in ("scene", "charset", "cell", "aspect", "maxCells", "background", "font", "time", "period", "fill", "weight",
                                                    "shape", "dither", "palette", "effects")
                if key in spec}
     runtime.update(glsl=glsl, uniforms={**defaults, **spec.get("uniforms", {})}, media=bool(spec.get("media")))
@@ -486,9 +600,10 @@ def spec_html(path):
         output.parent.mkdir(parents=True, exist_ok=True)
     if not output.exists() or output.read_text(encoding="utf-8") != page:
         output.write_text(page, encoding="utf-8")
-    if not (output.parent / "lib/asciipaper.js").exists() and (LOCAL / "lib/asciipaper.js").is_file():
-        (output.parent / "lib").mkdir(exist_ok=True)
-        shutil.copyfile(LOCAL / "lib/asciipaper.js", output.parent / "lib/asciipaper.js")
+    for name in ("asciipaper.js", "legacy.js", "asciify-core.js", "fluid-field.js"):
+        if not (output.parent / "lib" / name).exists() and (LOCAL / "lib" / name).is_file():
+            (output.parent / "lib").mkdir(exist_ok=True)
+            shutil.copyfile(LOCAL / "lib" / name, output.parent / "lib" / name)
     return output
 
 
@@ -1824,6 +1939,10 @@ LOOK_HELP = ("look holds spec fields to merge: style (a whole look from list_sty
              "lib/media.glsl's for ported media: contrast brightness gamma threshold invert colorMode tint tint2 vivid zoom fit...). "
              "Unknown keys are errors.")
 MCP_TOOLS = [
+    ("export_project", "Save a portable v1 project containing the spec, embedded shader and media for Android, iOS, macOS and Windows.",
+     {"name": {"type": "string"}, "output": {"type": "string"}}, ["name", "output"]),
+    ("import_project", "Import a portable ASCII Paper project without changing the current wallpaper.",
+     {"source": {"type": "string"}, "name": {"type": "string"}}, ["source"]),
     ("list_wallpapers", "List every wallpaper name (presets, built-in shaders, the user's own) and which one is showing.", {}, []),
     ("list_styles", "Everything a look can use: named styles (whole looks), shapes, character ramps, dithers, palettes, "
      "post effects with their ranges, and warps.", {}, []),
@@ -1859,6 +1978,10 @@ def mcp_call(tool, a):
     """Run one MCP tool; return MCP content blocks."""
     text = lambda s: [{"type": "text", "text": s}]
     image = lambda png: [{"type": "image", "mimeType": "image/png", "data": __import__("base64").b64encode(png).decode()}]
+    if tool == "export_project":
+        return text(f"Created {export_project(a['name'], a['output'])}")
+    if tool == "import_project":
+        return text(f"Imported {import_project(a['source'], a.get('name'))}")
     if tool == "list_wallpapers":
         current = CONFIG.read_text().strip() if CONFIG.exists() else DEFAULT
         return text(json.dumps({"showing": current, "wallpapers": library()}))
@@ -1946,7 +2069,13 @@ def mcp():
 
 def main():
     args = sys.argv[1:]
-    if args in (["--version"], ["-v"]):
+    if len(args) == 4 and args[:2] == ["project", "import"]:
+        print(f"Imported {import_project(args[2], args[3])}")
+    elif len(args) == 3 and args[:2] == ["project", "import"]:
+        print(f"Imported {import_project(args[2])}")
+    elif len(args) == 4 and args[:2] == ["project", "export"]:
+        print(f"Created {export_project(args[2], args[3])}")
+    elif args in (["--version"], ["-v"]):
         print(f"asciipaper {VERSION}")
     elif args == ["mcp"]:
         mcp()

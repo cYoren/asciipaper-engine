@@ -24,9 +24,13 @@ Live, interactive **ASCII wallpapers** for Windows, Linux, macOS and Android. On
 
 **Windows 10 and 11**: download `asciipaper-setup-….exe` from [Releases](https://github.com/cYoren/asciipaper/releases/latest) and run it. No administrator rights and nothing else to install (it uses .NET Framework and WebView2, which come with Windows). The installer isn't code-signed yet, so Windows may say it "protected your PC": choose **More info → Run anyway**. asciipaper then lives in the tray and starts with Windows.
 
-**Android 8 and up** (live wallpaper): download `asciipaper-….apk` from [Releases](https://github.com/cYoren/asciipaper/releases/latest) on your phone and open it (allow installing from your browser when asked). Open **asciipaper**, pick a wallpaper and a style, and tap **Set as wallpaper**. It reacts to your finger and stops drawing when you can't see it. Built-in wallpapers for now; ported pictures and videos come later.
+**Android 8 and up** (live wallpaper): download `asciipaper-….apk` from [Releases](https://github.com/cYoren/asciipaper/releases/latest) on your phone and open it (allow installing from your browser when asked). Released APKs may predate the shared Studio. The development build opens the common editor with all 11 scenes, custom projects and imported images, GIFs and videos. Pick a wallpaper, customize it and tap **Set wallpaper** to open Android's system picker. It reacts to touch and stops drawing when hidden.
+
+**Portable projects:** save an editable `.asciipaper.json` file containing the shader, appearance and media, then import it on another platform. Windows, Android, Apple and the browser share the Studio; Linux's GTK Studio and CLI use the same specs. See [shared runtime and builds](docs/shared-runtime.md) and the [platform status](docs/unification-progress.md) for verification and remaining differences.
 
 **macOS**: make or pick a wallpaper on Linux or Windows (or grab one people share), export it (`asciipaper export NAME`, or **Export** in the Studio), unzip, and open `index.html` in the free [Plash](https://sindresorhus.com/plash) app: it stays live and interactive. Prefer a plain video wallpaper? `asciipaper render NAME wallpaper.mp4`.
+
+**Apple development apps:** [`apple/project.yml`](apple/project.yml) defines native macOS and iPhone/iPad hosts for the common Studio. The macOS target includes a desktop wallpaper host. The iOS target edits, previews and exports; iOS does not support a third-party continuous interactive home-screen wallpaper. These are development targets, not signed App Store releases.
 
 **Arch Linux** (a native package, built from the PKGBUILD here):
 
@@ -90,7 +94,7 @@ asciipaper is also an MCP server. Hook it up and ask Claude, Cursor or any MCP c
 claude mcp add --scope user asciipaper -- asciipaper mcp        # Claude Code
 ```
 
-Anywhere else, add a stdio server with the command `asciipaper mcp`. Tools: `list_wallpapers`, `list_styles`, `get_wallpaper`, `write_wallpaper` (shaders, styles, any look field, recipes), `snapshot`, `set_wallpaper`, `import_media`, `text_wallpaper`, `encode_recipe`, `decode_recipe`, `render`. Everything runs on your machine: no account, no upload, no cost per render.
+Anywhere else, add a stdio server with the command `asciipaper mcp`. Tools: `list_wallpapers`, `list_styles`, `get_wallpaper`, `write_wallpaper` (shaders, styles, any look field, recipes), `snapshot`, `set_wallpaper`, `import_media`, `text_wallpaper`, `encode_recipe`, `decode_recipe`, `render`, `export_project`, `import_project`. Everything runs on your machine: no account, no upload, no cost per render. The Linux stdio server is listed in [Glama's MCP directory](https://glama.ai/mcp/servers/cYoren/asciipaper).
 
 ## Port anything
 
@@ -178,7 +182,8 @@ WebKit applies the desktop's text-scaling factor as page zoom, so with text scal
 ## Notes
 
 - One background surface per monitor, including monitors plugged in later. It sits under your bars and windows and never takes the keyboard.
-- The built-in scenes' shaders exist twice: in `wallpapers/*.html` (web) and `native/presets.c` (native). Change both together.
+- The four older scenes still exist twice: in `wallpapers/*.html` (web) and `native/presets.c` (native). Change both together. The shared cell/glyph passes and native look indices are generated: run `python3 tools/generate_runtime.py` after editing `wallpapers/lib/asciipaper.js` or `looks.json`; builds reject stale resources.
+- The same generator also creates the legacy simulation specs/adapters and scene catalog. Android compiles the C simulations directly; browser and Apple hosts use the JavaScript simulations.
 - `asciipaper-engine --snapshot out.png` renders any wallpaper offscreen, without a compositor (thumbnails, tests).
 - Flatpak: the manifest builds, but Flatpak's Wayland socket filters out layer-shell, so a Flatpak can edit and export wallpapers but not show them. Use the native package.
 - For AI agents: [`skills/asciipaper/SKILL.md`](skills/asciipaper/SKILL.md), or `npx skills add cYoren/asciipaper`.

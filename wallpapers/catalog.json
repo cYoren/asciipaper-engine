@@ -1,0 +1,79 @@
+[
+  {
+    "name": "donut",
+    "title": "Donut",
+    "kind": "spec",
+    "url": "run.html?spec=specs/donut.json",
+    "spec": "specs/donut.json"
+  },
+  {
+    "name": "fire",
+    "title": "Fire",
+    "kind": "spec",
+    "url": "run.html?spec=specs/fire.json",
+    "spec": "specs/fire.json"
+  },
+  {
+    "name": "flow",
+    "title": "flow",
+    "kind": "spec",
+    "url": "run.html?spec=specs/flow.json",
+    "spec": "specs/flow.json"
+  },
+  {
+    "name": "fluid",
+    "title": "fluid",
+    "kind": "spec",
+    "url": "run.html?spec=specs/fluid.json",
+    "spec": "specs/fluid.json"
+  },
+  {
+    "name": "matrix",
+    "title": "matrix",
+    "kind": "spec",
+    "url": "run.html?spec=specs/matrix.json",
+    "spec": "specs/matrix.json"
+  },
+  {
+    "name": "ocean",
+    "title": "Ocean",
+    "kind": "spec",
+    "url": "run.html?spec=specs/ocean.json",
+    "spec": "specs/ocean.json"
+  },
+  {
+    "name": "plasma",
+    "title": "Plasma",
+    "kind": "spec",
+    "url": "run.html?spec=specs/plasma.json",
+    "spec": "specs/plasma.json"
+  },
+  {
+    "name": "starfield",
+    "title": "Starfield",
+    "kind": "spec",
+    "url": "run.html?spec=specs/starfield.json",
+    "spec": "specs/starfield.json"
+  },
+  {
+    "name": "synthwave",
+    "title": "Synthwave",
+    "kind": "spec",
+    "url": "run.html?spec=specs/synthwave.json",
+    "spec": "specs/synthwave.json"
+  },
+  {
+    "name": "tunnel",
+    "title": "Tunnel",
+    "kind": "spec",
+    "url": "run.html?spec=specs/tunnel.json",
+    "spec": "specs/tunnel.json"
+  },
+  {
+    "name": "yin-yang",
+    "title": "yin-yang",
+    "kind": "spec",
+    "url": "run.html?spec=specs/yin-yang.json",
+    "spec": "specs/yin-yang.json"
+  }
+]

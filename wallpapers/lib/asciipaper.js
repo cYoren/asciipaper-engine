@@ -14,12 +14,15 @@
   // while the pointer is active, `idleFps` otherwise, and not at all while paused. When idle we wait
   // on a timer (instead of skipping vsyncs), so a 120 Hz monitor costs no more than a 60 Hz one.
   const nativeRaf = window.requestAnimationFrame.bind(window);
+  const nativeCancel = window.cancelAnimationFrame.bind(window);
   const callbacks = new Map();
   let nextId = 1, timer = 0, pending = 0, last = 0;
   const active = () => performance.now() - pointer.moved < 2000;
   const rate = () => active() ? options.fps : options.idleFps;
   function flush(now) {
-    pending = 0; last = now;
+    pending = 0;
+    if (document.hidden || options.paused) return;
+    last = now;
     const run = [...callbacks.values()]; callbacks.clear();
     for (const callback of run) try { callback(now); } catch (error) { reportError(error); }
   }
@@ -30,13 +33,22 @@
     if (now - last >= 1000 / rate() - 2) flush(now); else schedule();
   }
   function schedule() {
-    if (timer || pending || options.paused || !callbacks.size) return;
+    if (timer || pending || document.hidden || options.paused || !callbacks.size) return;
     if (active()) { pending = nativeRaf(tick); return; }
     const wait = last + 1000 / rate() - performance.now();
     const go = () => { timer = 0; pending = nativeRaf(flush); };
     if (wait > 0) timer = setTimeout(go, wait); else go();
   }
-  function reschedule() { clearTimeout(timer); timer = 0; schedule(); }
+  function reschedule() {
+    clearTimeout(timer); timer = 0;
+    if (pending) nativeCancel(pending); pending = 0;
+    const el = document.getElementById('asciipaper-media');
+    if (el?.pause) {
+      if (document.hidden || options.paused) el.pause(); else el.play().catch(() => {});
+    }
+    schedule();
+  }
+  addEventListener('visibilitychange', reschedule);
   window.requestAnimationFrame = callback => { const id = nextId++; callbacks.set(id, callback); schedule(); return id; };
   window.cancelAnimationFrame = id => { callbacks.delete(id); };
 
@@ -126,7 +138,7 @@ vec3 tone=k==0?vec3(0.0,0.68,0.94):k==1?vec3(0.93,0.0,0.55):k==2?vec3(1.0,0.95,0
 return col;}
 vec3 draw(vec2 p){vec4 d=at(p);vec2 l=fract(vec2(p.x,1.0-p.y)*grid);float g=floor(d.r*255.0+0.5),v=g/max(glyphs-1.0,1.0),s=floor(shape+0.5);
 vec3 under=bg+d.gba*fill*v,c=d.gba;
-if(s<0.5){vec2 uv=(vec2(g*tile,0.0)+pad+l*cell)/atlasSize;return mix(under,c,texture2D(atlas,uv).a);}
+if(s<0.5){float cols=floor(atlasSize.x/tile);vec2 uv=(vec2(mod(g,cols)*tile,floor(g/cols)*(ceil(cell.y)+pad*2.0))+pad+l*cell)/atlasSize;return mix(under,c,texture2D(atlas,uv).a);}
 if(s>11.5)return cmyk(p*grid*cell);
 vec2 q=(l-0.5)*cell;float r=min(cell.x,cell.y)*0.5,gap=max(1.0,r*0.12),k=0.0;
 if(g<0.5&&s!=4.0)return under;
@@ -166,6 +178,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
   const FX = ['vignette', 'scanlines', 'crt', 'rgbSplit', 'grain', 'glitch', 'bloom', 'dust', 'saturation', 'hue', 'flicker', ''];
   const named = (v, names) => typeof v === 'number' ? v : Math.max(0, names.indexOf(v));
   const rgb = v => (v.match(/[0-9a-f]{2}/gi) || ['00', '00', '00']).map(h => parseInt(h, 16) / 255);
+  let lastScene = null;
 
   function ascii(config = {}) {
     const cfg = Object.assign({charset: ' .:-=+*#%@', cell: 8, aspect: .6, maxCells: 40000, background: '#080909',
@@ -250,10 +263,13 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
       // Glyphs are rasterized at the exact cell size in device pixels, as asciify.org does.
       const cw = canvas.width / cols, ch = canvas.height / rows, tile = Math.ceil(cw) + PAD * 2;
       const atlas = document.createElement('canvas'), ax = atlas.getContext('2d');
-      atlas.width = tile * chars.length; atlas.height = Math.ceil(ch) + PAD * 2;
+      const atlasCols = Math.min(chars.length, Math.max(1, Math.floor(gl.getParameter(gl.MAX_TEXTURE_SIZE) / tile)));
+      const atlasRow = Math.ceil(ch) + PAD * 2;
+      atlas.width = tile * atlasCols; atlas.height = atlasRow * Math.ceil(chars.length / atlasCols);
+      if (atlas.height > gl.getParameter(gl.MAX_TEXTURE_SIZE)) throw new Error('Character atlas exceeds the device texture limit');
       ax.font = `${cfg.weight || 400} ${.9 * Math.min(cw / .55, ch)}px ${cfg.font}`;
       ax.textAlign = 'center'; ax.textBaseline = 'middle'; ax.fillStyle = '#fff';
-      chars.forEach((c, i) => ax.fillText(c, i * tile + PAD + cw / 2, PAD + ch / 2));
+      chars.forEach((c, i) => ax.fillText(c, (i % atlasCols) * tile + PAD + cw / 2, Math.floor(i / atlasCols) * atlasRow + PAD + ch / 2));
       gl.activeTexture(gl.TEXTURE1); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas);
       gl.useProgram(glyphProg);
       gl.uniform2f(glyphProg.u('grid'), cols, rows); gl.uniform2f(glyphProg.u('cell'), cw, ch);
@@ -266,6 +282,15 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
     addEventListener('resize', resize); resize();
 
     const clicks = new Float32Array(24);
+    const captures = [];
+    lastScene = scene;
+    scene.capture = async () => {
+      if (document.hidden) throw new Error('Open the preview before saving an image');
+      const paused = options.paused;
+      if (paused) set({paused: false});
+      try { return await new Promise((resolve, reject) => captures.push(() => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Image capture failed')), 'image/png'))); }
+      finally { if (paused) set({paused: true}); }
+    };
     let previous = 0;
     function frame(now) {
       requestAnimationFrame(frame);
@@ -289,6 +314,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
       gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.viewport(0, 0, scene.cols, scene.rows); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, canvas.width, canvas.height);
       gl.useProgram(glyphProg); gl.uniform1f(glyphProg.u('time'), scene.time); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      for (const capture of captures.splice(0)) capture();
     }
     requestAnimationFrame(frame);
     return scene;
@@ -302,6 +328,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
   let live = null;   // the running spec: {uniforms, look} for patch()
 
   function spec(s) {
+    if (s.scene) return import(window.__asciipaperLegacyURL || new URL('legacy.js', here)).then(module => module.run(s.scene, s));
     const uniforms = {};
     for (const [k, v] of Object.entries(s.uniforms || {})) uniforms[k] = typeof v === 'boolean' ? +v : color(v);
     live = {uniforms, look: JSON.stringify(LOOK.map(k => s[k])), shader: s.glsl};
@@ -320,7 +347,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
           return;
         }
         if (!frame) {
-          const w = Math.min(256, w0), h = Math.max(1, Math.round(w * h0 / w0));
+          const k = Math.min(1, 256 / Math.max(w0, h0)), w = Math.max(1, Math.round(w0 * k)), h = Math.max(1, Math.round(h0 * k));   // 256 px on the longer side
           frame = Object.assign(document.createElement('canvas'), {width: w, height: h}).getContext('2d', {willReadFrequently: true});
         }
         const {width, height} = frame.canvas;
@@ -338,15 +365,16 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
     const base = new URL(url, location.href), s = await (await fetch(base, {cache: 'no-store'})).json();
     let glsl = s.shader ?? (s.media ? 'media' : null);
     if (typeof glsl !== 'string') throw new Error('asciipaper: a spec needs "shader" or "media"');
-    if (!glsl.includes('cell(')) glsl = await (await fetch(glsl === 'media' ? new URL('media.glsl', here) : new URL(glsl, base), {cache: 'no-store'})).text();
+    if (!/\bcell\s*\(/.test(glsl)) glsl = await (await fetch(glsl === 'media' ? new URL('media.glsl', here) : new URL(glsl, base), {cache: 'no-store'})).text();
     const first = glsl.split('\n', 1)[0];
     const defaults = first.startsWith('// defaults:') ? JSON.parse(first.slice(12)) : {};
     return {...s, glsl, uniforms: {...defaults, ...s.uniforms}, mediaUrl: s.media && new URL(s.media, base).href};
   }
   async function load(url) {
     const s = await resolveSpec(url);
+    if (s.scene) return (await import(new URL('legacy.js', here))).run(s.scene, s);
     if (s.mediaUrl) {
-      const still = /\.(gif|png|jpe?g|webp|bmp|avif|apng)$/i.test(new URL(s.mediaUrl).pathname);
+      const still = s.mediaType?.startsWith('image/') || /\.(gif|png|jpe?g|webp|bmp|avif|apng)$/i.test(new URL(s.mediaUrl).pathname);
       const el = document.createElement(still ? 'img' : 'video');
       Object.assign(el, {id: 'asciipaper-media', hidden: true, src: s.mediaUrl, crossOrigin: 'anonymous'});
       if (!still) Object.assign(el, {muted: true, loop: true, autoplay: true, playsInline: true});
@@ -367,6 +395,8 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
   }
 
   window.asciipaper = {options, pointer, set, ascii, spec, load, patch,
+    get ready() { return !!lastScene; },
+    capture: () => lastScene ? lastScene.capture() : Promise.reject(new Error('Preview is still loading')),
     onChange(callback) { addEventListener('asciipaper-settings', event => callback(event.detail)); }};
   set({});
 })();

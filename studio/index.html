@@ -9,6 +9,7 @@
   <div class="brand"><span class="logo" aria-hidden="true">▚</span> asciipaper</div>
   <div class="actions">
     <button id="pause" class="ghost" title="Pause or resume the wallpaper">Pause</button>
+    <button id="platform-wallpaper" class="primary" hidden>Set wallpaper</button>
     <button id="open-settings" class="ghost" title="Settings">Settings</button>
   </div>
 </header>
@@ -35,6 +36,8 @@
       <button id="add-file" class="primary">Choose a file…</button>
       <button id="add-link">Paste a link…</button>
       <button id="add-shader" class="ghost" title="For people who like to code: write a GLSL shader">Write a shader…</button>
+      <button id="import-project" class="ghost">Import project…</button>
+      <button id="add-text" class="ghost">Text wallpaper…</button>
     </div>
   </section>
 
@@ -54,6 +57,10 @@
   <div class="row share">
     <button id="drawer-export" title="One ZIP for Wallpaper Engine, Lively, or Plash on a Mac">Export for Windows and Mac</button>
     <button id="drawer-recipe" class="ghost" title="One line that recreates this look anywhere">Copy look code</button>
+    <button id="drawer-project" class="ghost">Save project</button>
+    <button id="drawer-html" class="ghost">Save HTML</button>
+    <button id="drawer-image" class="ghost">Save image</button>
+    <button id="drawer-record" class="ghost">Record video</button>
     <input id="drawer-paste" placeholder="Paste a look code or style name, then Enter" spellcheck="false">
   </div>
   <div class="row end"><button id="drawer-delete" class="danger ghost">Delete this wallpaper</button></div>
@@ -64,10 +71,10 @@
     <h2>Settings</h2>
     <label class="switch-row"><span>Start with Windows<small>Your wallpaper comes back after you sign in</small></span><input type="checkbox" id="autostart"></label>
     <label class="switch-row"><span>Click effects<small>Ripples where you click on the desktop</small></span><input type="checkbox" id="clicks"></label>
-    <label class="slider-row"><span>Frame rate<small>While your mouse is on the desktop</small></span><input type="range" id="fps" min="10" max="60" step="1"><output></output></label>
+    <label class="slider-row"><span>Frame rate<small>While you interact with the wallpaper</small></span><input type="range" id="fps" min="1" max="60" step="1"><output></output></label>
     <label class="slider-row"><span>Idle frame rate<small>The rest of the time. Lower saves battery</small></span><input type="range" id="idleFps" min="1" max="60" step="1"><output></output></label>
     <label class="slider-row"><span>Quality<small>Lower draws fewer pixels</small></span><input type="range" id="quality" min="0.5" max="2" step="0.1"><output></output></label>
-    <label class="slider-row"><span>Mouse response<small>How strongly wallpapers react</small></span><input type="range" id="pointer" min="0" max="2" step="0.1"><output></output></label>
+    <label class="slider-row"><span>Pointer response<small>How strongly wallpapers react to mouse or touch</small></span><input type="range" id="pointer" min="0" max="2" step="0.1"><output></output></label>
     <div class="row between">
       <button type="button" id="open-folder" class="ghost">Open wallpaper folder</button>
       <span id="version" class="muted"></span>
@@ -88,6 +95,8 @@
 <div id="toasts" aria-live="polite"></div>
 <div id="thumbnailer" aria-hidden="true"></div>
 <script>if (/[?&]mock\b/.test(location.search)) document.write('<script src="mock.js"><\/script>')</script>
+<script src="project.js"></script>
+<script src="portable-host.js"></script>
 <script src="studio.js"></script>
 </body>
 </html>

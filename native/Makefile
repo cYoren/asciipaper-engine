@@ -13,8 +13,12 @@ HEADERS = $(patsubst %.xml,%-client-protocol.h,$(notdir $(XML)))
 CODE = $(patsubst %.xml,%-protocol.c,$(notdir $(XML)))
 vpath %.xml $(sort $(dir $(XML)))
 
-asciipaper-engine: engine.c presets.c spec.c json.c engine.h spec.h json.h $(HEADERS) $(CODE)
+asciipaper-engine: engine.c presets.c spec.c json.c engine.h spec.h json.h shaders.h look_names.h $(HEADERS) $(CODE) | check-runtime
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(shell pkg-config --cflags $(PKGS)) -I. -o $@ engine.c presets.c spec.c json.c $(CODE) $(LDFLAGS) $(shell pkg-config --libs $(PKGS)) -lm
+
+.PHONY: check-runtime
+check-runtime:
+	python3 ../tools/generate_runtime.py --check
 
 %-client-protocol.h: %.xml
 	wayland-scanner client-header $< $@

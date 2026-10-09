@@ -1,0 +1,44 @@
+{
+  "SHAPES": [
+    "glyph",
+    "pixel",
+    "mosaic",
+    "dots",
+    "led",
+    "lego",
+    "cross",
+    "diamond",
+    "lines",
+    "diagonal",
+    "voxel",
+    "disco",
+    "cmyk"
+  ],
+  "DITHERS": [
+    "none",
+    "bayer2",
+    "bayer4",
+    "bayer8",
+    "bayer16",
+    "halftone",
+    "radial",
+    "linesH",
+    "linesV",
+    "linesD",
+    "whiteNoise",
+    "blueNoise"
+  ],
+  "FX": [
+    "vignette",
+    "scanlines",
+    "crt",
+    "rgbSplit",
+    "grain",
+    "glitch",
+    "bloom",
+    "dust",
+    "saturation",
+    "hue",
+    "flicker"
+  ]
+}
