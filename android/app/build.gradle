@@ -2,9 +2,38 @@
 // renderer. Plain Java and the platform APIs only, no libraries. The wallpapers/ folder is bundled as-is.
 plugins { id "com.android.application" }
 
+tasks.register("checkSharedRuntime", Exec) {
+    workingDir rootProject.projectDir.parentFile
+    commandLine System.getenv("PYTHON") ?: "python3", "tools/generate_runtime.py", "--check"
+}
+tasks.named("preBuild").configure { dependsOn "checkSharedRuntime" }
+tasks.register("syncStudio", Sync) {
+    into layout.buildDirectory.dir("studio-assets/app")
+    from("../../studio") { into "studio" }
+    from("../../wallpapers") { into "wallpapers" }
+}
+tasks.named("preBuild").configure { dependsOn "syncStudio" }
+
+def releaseKeys = [
+    storeFile: System.getenv("ASCIIPAPER_RELEASE_STORE_FILE"),
+    storePassword: System.getenv("ASCIIPAPER_RELEASE_STORE_PASSWORD"),
+    keyAlias: System.getenv("ASCIIPAPER_RELEASE_KEY_ALIAS"),
+    keyPassword: System.getenv("ASCIIPAPER_RELEASE_KEY_PASSWORD")
+]
+def hasReleaseKeys = releaseKeys.values().every { it != null && !it.isEmpty() }
+tasks.register("checkReleaseIdentity") {
+    doLast {
+        if (!hasReleaseKeys) throw new GradleException("Release signing is not configured. Set the four ASCIIPAPER_RELEASE_* variables documented in docs/shared-runtime.md; use assembleDebug for local testing.")
+        if (releaseKeys.keyAlias == "androiddebugkey") throw new GradleException("The Android debug key cannot be used for a store release.")
+    }
+}
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn "checkReleaseIdentity" }
+
 android {
     namespace "io.github.cyoren.asciipaper"
     compileSdk 36
+    ndkVersion "27.2.12479018"
+    externalNativeBuild { cmake { path "src/main/cpp/CMakeLists.txt"; version "3.22.1" } }
     defaultConfig {
         applicationId "io.github.cyoren.asciipaper"
         minSdk 26
@@ -12,12 +41,22 @@ android {
         versionCode 1
         versionName "1.2.0"
     }
-    sourceSets { main { assets.srcDirs = ["../../wallpapers"] } }
+    sourceSets { main { assets.srcDirs = ["../../wallpapers", layout.buildDirectory.dir("studio-assets")] } }
+    signingConfigs {
+        if (hasReleaseKeys) {
+            storeRelease {
+                storeFile file(releaseKeys.storeFile)
+                storePassword releaseKeys.storePassword
+                keyAlias releaseKeys.keyAlias
+                keyPassword releaseKeys.keyPassword
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
-            // Signed with the debug key unless a release key is configured: fine for sideloading.
-            signingConfig signingConfigs.debug
+            // Store releases must have a real identity; never fall back to the debug key.
+            if (hasReleaseKeys) signingConfig signingConfigs.storeRelease
         }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }

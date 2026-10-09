@@ -138,7 +138,7 @@ static const struct preset flow = {
 struct stroke { float x, y, dx, dy, speed; };
 struct fluid {
     float aspect, energy; int columns, rows, has_previous, strokes;
-    float px, py, *front, *back;
+    float px, py, *front, *back, *storage;
     struct stroke stroke[MAX_STROKES];
     uint8_t *bytes;
 };
@@ -190,11 +190,13 @@ static void fluid_upload(struct scene *s, struct fluid *f) {
 
 // (Re)size a field for this monitor's shape. Wallpapers that use one keep it first in their state.
 static void field_init(struct fluid *f, struct scene *s) {
-    free(f->front); free(f->bytes);
+    // front/back swap each step, so front may point into the allocation.
+    free(f->storage); free(f->bytes);
     f->aspect = clampf((float)s->width / s->height, .25f, 4);
     f->columns = f->aspect >= 1 ? 64 : roundf(64 * f->aspect);
     f->rows = f->aspect >= 1 ? roundf(64 / f->aspect) : 64;
-    f->front = calloc((size_t)f->columns * f->rows * 3 * 2, sizeof(float)); f->back = f->front + f->columns * f->rows * 3;
+    f->storage = calloc((size_t)f->columns * f->rows * 3 * 2, sizeof(float));
+    f->front = f->storage; f->back = f->front + f->columns * f->rows * 3;
     f->bytes = calloc((size_t)f->columns * f->rows * 4, 1);
     fluid_clear(f);
     fluid_upload(s, f);
@@ -301,3 +303,14 @@ static const struct preset yin_yang = {
 };
 
 const struct preset *const presets[] = {&fluid, &flow, &matrix, &yin_yang, NULL};
+
+void preset_destroy(const struct preset *preset, struct scene *s) {
+    if (!s->state) return;
+    if (preset->resize == flow_resize) free(((struct flow *)s->state)->vx);
+    else if (preset->resize == fluid_resize || preset->resize == yin_yang_resize) {
+        struct fluid *f = s->state;
+        free(f->storage);
+        free(f->bytes);
+    }
+    free(s->state); s->state = NULL;
+}

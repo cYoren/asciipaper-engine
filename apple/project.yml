@@ -1,0 +1,59 @@
+name: ASCIIPaper
+options:
+  bundleIdPrefix: io.github.cyoren
+  deploymentTarget:
+    iOS: '17.0'
+    macOS: '14.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    MARKETING_VERSION: '1.2.0'
+    CURRENT_PROJECT_VERSION: '1'
+    GENERATE_INFOPLIST_FILE: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+targets:
+  ASCIIPaper-iOS:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - path: ../studio
+        type: folder
+        buildPhase: resources
+      - path: ../wallpapers
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.cyoren.asciipaper
+        INFOPLIST_KEY_CFBundleDisplayName: ASCII Paper
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportsDocumentBrowser: YES
+        TARGETED_DEVICE_FAMILY: '1,2'
+        SUPPORTS_MACCATALYST: NO
+  ASCIIPaper-macOS:
+    type: application
+    platform: macOS
+    sources:
+      - Sources
+      - path: ../studio
+        type: folder
+        buildPhase: resources
+      - path: ../wallpapers
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.cyoren.asciipaper.macos
+        ENABLE_APP_SANDBOX: YES
+        CODE_SIGN_ENTITLEMENTS: macOS.entitlements
+schemes:
+  ASCIIPaper-iOS:
+    build:
+      targets:
+        ASCIIPaper-iOS: all
+  ASCIIPaper-macOS:
+    build:
+      targets:
+        ASCIIPaper-macOS: all

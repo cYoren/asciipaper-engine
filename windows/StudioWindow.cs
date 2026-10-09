@@ -92,6 +92,20 @@ sealed class StudioWindow : Form
         switch (method)
         {
             case "state": return app.State();
+            case "saveFile":
+                using (var dialog = new SaveFileDialog { Title = "Save wallpaper file", FileName = Path.GetFileName(p.Str("name", "wallpaper")) })
+                {
+                    if (dialog.ShowDialog(this) != DialogResult.OK) return null;
+                    var data = p.Str("data", "");
+                    if (data.Length > 128 * 1024 * 1024) throw new InvalidOperationException("File is too large");
+                    File.WriteAllBytes(dialog.FileName, Convert.FromBase64String(data));
+                    return dialog.FileName;
+                }
+            case "importProject":
+                var project = p["project"] as Dictionary<string, object>;
+                var importedProject = Library.ImportProject(project);
+                await app.Apply(importedProject);
+                return app.State();
             case "apply": await app.Apply(p.Str("name")); return app.State();
             case "pause": app.SetPaused(p.TryGetValue("paused", out var paused) && paused is true); return app.State();
             case "setOptions": await app.SetOptions(p["options"] as Dictionary<string, object>); return app.State();

@@ -1,0 +1,24 @@
+name: Apple apps
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: python3 tools/generate_runtime.py --check
+      - run: xcodegen generate --spec apple/project.yml
+      - name: Build iPhone and iPad simulator app
+        run: xcodebuild -project apple/ASCIIPaper.xcodeproj -scheme ASCIIPaper-iOS -destination 'generic/platform=iOS Simulator' -derivedDataPath apple/build CODE_SIGNING_ALLOWED=NO build
+      - name: Build macOS app
+        run: xcodebuild -project apple/ASCIIPaper.xcodeproj -scheme ASCIIPaper-macOS -destination 'platform=macOS' -derivedDataPath apple/build CODE_SIGNING_ALLOWED=NO build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apple-unsigned-apps
+          path: apple/build/Build/Products/Debug*/*.app

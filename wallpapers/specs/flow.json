@@ -1,0 +1,9 @@
+{
+  "title": "flow",
+  "scene": "flow",
+  "shader": "vec4 cell(vec2 uv){return texture2D(u_data,uv);}",
+  "charset": " .:-=+*#%@",
+  "background": "#080909",
+  "cell": 10,
+  "aspect": 0.625
+}
