@@ -30,6 +30,9 @@ jobs:
       - name: Studio browser conformance
         run: CHROMIUM=google-chrome node tools/studio_smoke.mjs
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
       - name: Build and lint Android
         working-directory: android
         run: ./gradlew assembleDebug lintDebug

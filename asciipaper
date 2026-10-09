@@ -444,7 +444,7 @@ def spec_shader(spec, base):
     shader = spec.get("shader", "media" if spec.get("media") else None)
     if not isinstance(shader, str):
         sys.exit('asciipaper: a spec needs "shader" or "media"')
-    if "cell(" not in shader:
+    if not re.search(r"\bcell\s*\(", shader):
         path = LOCAL / "lib/media.glsl" if shader == "media" else base / shader
         shader = path.read_text(encoding="utf-8")
     defaults = {}
@@ -463,7 +463,7 @@ def validate_project(project):
     if not isinstance(project, dict) or project.get("format") != "asciipaper.project" or project.get("version") != 1:
         raise ValueError("Unsupported ASCII Paper project version")
     spec = project.get("spec")
-    if not isinstance(spec, dict) or not isinstance(spec.get("shader"), str) or "cell(" not in spec["shader"] or len(spec["shader"]) > 262144:
+    if not isinstance(spec, dict) or not isinstance(spec.get("shader"), str) or not re.search(r"\bcell\s*\(", spec["shader"]) or len(spec["shader"]) > 262144:
         raise ValueError("Missing embedded GLSL shader")
     for key, low, high in [("cell", 1, 128), ("aspect", .1, 4), ("maxCells", 1, 100000), ("fill", 0, 1), ("weight", 100, 900), ("period", .001, 1e8), ("time", -1e8, 1e8)]:
         if key in spec and (isinstance(spec[key], bool) or not isinstance(spec[key], (int, float)) or not math.isfinite(spec[key]) or not low <= spec[key] <= high):

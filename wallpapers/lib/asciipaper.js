@@ -365,7 +365,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
     const base = new URL(url, location.href), s = await (await fetch(base, {cache: 'no-store'})).json();
     let glsl = s.shader ?? (s.media ? 'media' : null);
     if (typeof glsl !== 'string') throw new Error('asciipaper: a spec needs "shader" or "media"');
-    if (!glsl.includes('cell(')) glsl = await (await fetch(glsl === 'media' ? new URL('media.glsl', here) : new URL(glsl, base), {cache: 'no-store'})).text();
+    if (!/\bcell\s*\(/.test(glsl)) glsl = await (await fetch(glsl === 'media' ? new URL('media.glsl', here) : new URL(glsl, base), {cache: 'no-store'})).text();
     const first = glsl.split('\n', 1)[0];
     const defaults = first.startsWith('// defaults:') ? JSON.parse(first.slice(12)) : {};
     return {...s, glsl, uniforms: {...defaults, ...s.uniforms}, mediaUrl: s.media && new URL(s.media, base).href};

@@ -18,7 +18,22 @@ jobs:
         run: xcodebuild -project apple/ASCIIPaper.xcodeproj -scheme ASCIIPaper-iOS -destination 'generic/platform=iOS Simulator' -derivedDataPath apple/build CODE_SIGNING_ALLOWED=NO build
       - name: Build macOS app
         run: xcodebuild -project apple/ASCIIPaper.xcodeproj -scheme ASCIIPaper-macOS -destination 'platform=macOS' -derivedDataPath apple/build CODE_SIGNING_ALLOWED=NO build
+      - name: macOS Studio runtime self-test
+        run: |
+          mkdir -p apple/selftest
+          apple/build/Build/Products/Debug/ASCIIPaper-macOS.app/Contents/MacOS/ASCIIPaper-macOS --selftest "$PWD/apple/selftest" &
+          task_pid=$!
+          for attempt in {1..120}; do
+            if ! kill -0 "$task_pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if kill -0 "$task_pid" 2>/dev/null; then kill "$task_pid"; echo 'Apple self-test timed out'; exit 1; fi
+          wait "$task_pid"
+          cat apple/selftest/selftest.json
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: apple-unsigned-apps
-          path: apple/build/Build/Products/Debug*/*.app
+          path: |
+            apple/build/Build/Products/Debug*/*.app
+            apple/selftest

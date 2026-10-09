@@ -78,7 +78,7 @@ public final class StudioActivity extends Activity {
                         if(project==null){String name=p.getString("name");NativeScene.spec(name);prefs.edit().remove("project").putString(WallpaperService.WALLPAPER,name).apply();}
                         else {
                             JSONObject s=new JSONObject(project.getJSONObject("spec").toString());String shader=s.getString("shader");
-                            if(!shader.contains("cell(")||shader.length()>262144)throw new IllegalArgumentException("Invalid embedded shader");
+                            if(!shader.matches("(?s).*\\bcell\\s*\\(.*")||shader.length()>262144)throw new IllegalArgumentException("Invalid embedded shader");
                             JSONObject media=project.optJSONObject("media");
                             if(media!=null){String data=media.getString("data"),name=media.getString("name");
                                 if(data.length()>89478488||!name.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")||name.contains(".."))throw new IllegalArgumentException("Invalid media");

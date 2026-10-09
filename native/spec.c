@@ -150,7 +150,7 @@ const struct preset *spec_load(const char *path, const char *lib, char *shader_f
     char *glsl = NULL;
     shader_file[0] = 0;
     if (!shader) fprintf(stderr, "asciipaper-engine: %s needs a \"shader\" or \"media\"\n", path);
-    else if (strstr(shader, "cell(")) glsl = strdup(shader);
+    else if (strchr(shader, '{')) glsl = strdup(shader);
     else {
         if (!strcmp(shader, "media")) snprintf(file, sizeof file, "%s/media.glsl", lib);
         else if (shader[0] == '/') snprintf(file, sizeof file, "%s", shader);

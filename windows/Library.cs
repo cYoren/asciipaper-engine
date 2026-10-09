@@ -91,7 +91,7 @@ static class Library
         if (project == null || project.Str("format") != "asciipaper.project" || project.Num("version", 0) != 1)
             throw new InvalidOperationException("Unsupported project version");
         if (!project.TryGetValue("spec", out var raw) || raw is not Dictionary<string, object> spec ||
-            !(spec.Str("shader")?.Contains("cell(") ?? false)) throw new InvalidOperationException("Missing embedded shader");
+            !Regex.IsMatch(spec.Str("shader", ""), @"\bcell\s*\(") || spec.Str("shader", "").Length > 262144) throw new InvalidOperationException("Missing embedded shader");
         var name = NewName(project.Str("title", "wallpaper"));
         string mediaFile = null;
         if (project.TryGetValue("media", out var m) && m is Dictionary<string, object> media)
@@ -277,7 +277,7 @@ static class Library
             foreach (var key in new[] { "media", "shader" })
             {
                 var relative = data.Str(key);
-                if (relative == null || relative == "media" || relative.Contains("cell(")) continue;
+                if (relative == null || relative == "media" || Regex.IsMatch(relative, @"\bcell\s*\(")) continue;
                 var path = Path.GetFullPath(Path.Combine(Folder, relative));
                 if (path.StartsWith(Folder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) File.Delete(path);
             }

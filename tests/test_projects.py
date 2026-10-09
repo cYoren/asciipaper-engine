@@ -22,7 +22,7 @@ class ProjectCompatibilityTest(unittest.TestCase):
         exec(compile(ast.Module(body=defs,type_ignores=[]),'Linux project validator','exec'),scope)
         cls.validate=staticmethod(scope['validate_project'])
         cls.fixture={'format':'asciipaper.project','version':1,'title':'My ASCII ░',
-          'spec':{'shader':'vec4 cell(vec2 uv){return vec4(uv,0.,1.);}','charset':' ░▒▓█','cell':8,'aspect':.55,'effects':{'crt':.3},'media':'old-name.png','frames':'never-copy.frames'},
+          'spec':{'shader':'vec4 cell (vec2 uv){return vec4(uv,0.,1.);}','charset':' ░▒▓█','cell':8,'aspect':.55,'effects':{'crt':.3},'media':'old-name.png','frames':'never-copy.frames'},
           'media':{'name':'source.png','mime':'image/png','data':base64.b64encode(b'fixture-media-bytes').decode()}}
     def javascript(self,p):
         script="const p=require('./studio/project.js');try{process.stdout.write(JSON.stringify(p.validate(JSON.parse(require('fs').readFileSync(0,'utf8')))));}catch(e){process.stderr.write(e.message);process.exitCode=1;}"

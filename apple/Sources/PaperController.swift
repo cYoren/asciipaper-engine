@@ -14,6 +14,7 @@ final class PaperController: NSObject, ObservableObject, WKScriptMessageHandlerW
     private let assets = PaperAssets()
     private var observers: [NSObjectProtocol] = []
     private var isVisible = true
+    private var selfTestStarted = false
     lazy var web: WKWebView = {
         let config = configuration()
         config.userContentController.addScriptMessageHandler(WeakPaperBridge(self), contentWorld: .page, name: "paper")
@@ -57,7 +58,10 @@ final class PaperController: NSObject, ObservableObject, WKScriptMessageHandlerW
         wallpaper?.energy(cap: cap)
         #endif
     }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { energy(); visible(isVisible) }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        energy();visible(isVisible)
+        if StudioSelfTest.enabled && !selfTestStarted { selfTestStarted=true;StudioSelfTest.run(webView) }
+    }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let u = action.request.url else { decisionHandler(.cancel); return }
         decisionHandler(["paper", "blob", "about", "data"].contains(u.scheme ?? "") ? .allow : .cancel)
@@ -159,7 +163,7 @@ private final class WeakPaperBridge: NSObject, WKScriptMessageHandlerWithReply {
 final class PaperAssets: NSObject, WKURLSchemeHandler {
     private let bundle = Bundle.main.resourceURL!
     private let library: URL = {
-        let root = FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("ASCIIPaper",isDirectory:true)
+        let root = StudioSelfTest.enabled ? StudioSelfTest.library : FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("ASCIIPaper",isDirectory:true)
         try? FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
         return root
     }()
@@ -183,7 +187,7 @@ final class PaperAssets: NSObject, WKURLSchemeHandler {
     func store(_ project: [String: Any]) throws -> URL {
         guard project["format"] as? String == "asciipaper.project", project["version"] as? Int == 1,
               var spec = project["spec"] as? [String: Any], let shader = spec["shader"] as? String,
-              shader.contains("cell("), shader.count <= 262144 else { throw PaperError.invalidProject }
+              shader.range(of:"\\bcell\\s*\\(",options:.regularExpression) != nil, shader.count <= 262144 else { throw PaperError.invalidProject }
         let folder = library.appendingPathComponent("active",isDirectory:true)
         try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
         do {

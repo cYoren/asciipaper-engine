@@ -136,7 +136,7 @@ final class Look {
         JSONObject looks = looks(assets), uniforms = new JSONObject();
         String shader = spec.optString("shader", spec.has("media") ? "media" : "");
         Look look = new Look();
-        look.glsl = shader.contains("cell(") ? shader : read(assets, shader.equals("media") ? "lib/media.glsl" : "specs/" + shader);
+        look.glsl = shader.matches("(?s).*\\bcell\\s*\\(.*") ? shader : read(assets, shader.equals("media") ? "lib/media.glsl" : "specs/" + shader);
         look.scene = spec.optString("scene", "");
         look.media = spec.optString("mediaPath", "");
         if (look.glsl.startsWith("// defaults:")) merge(uniforms, new JSONObject(look.glsl.substring(12, look.glsl.indexOf('\n'))));

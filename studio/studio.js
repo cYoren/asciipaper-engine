@@ -383,7 +383,7 @@ const RECIPE = 'asciipaper:v1:';
 async function specOf(w) {
   const url = new URL(w.spec, location.href), spec = await (await fetch(url, {cache: 'no-store'})).json();
   let glsl = spec.shader ?? (spec.media ? 'media' : null);
-  if (!glsl.includes('cell(')) glsl = await (await fetch(glsl === 'media' ? new URL('lib/media.glsl', WP) : new URL(glsl, url))).text();
+  if (!/\bcell\s*\(/.test(glsl)) glsl = await (await fetch(glsl === 'media' ? new URL('lib/media.glsl', WP) : new URL(glsl, url))).text();
   return {spec, glsl};
 }
 async function exportPage(w) {

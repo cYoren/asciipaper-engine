@@ -202,7 +202,7 @@ public class MainActivity extends Activity implements SharedPreferences.OnShared
             if (recipe.opt("palette") instanceof String)
                 recipe.put("palette", catalog.getJSONObject("palettes").getJSONArray(recipe.getString("palette")));
             String shader = spec.getString("shader");
-            recipe.put("shader", shader.contains("cell(") ? shader : Look.read(getAssets(), "specs/" + shader));
+            recipe.put("shader", shader.matches("(?s).*\\bcell\\s*\\(.*") ? shader : Look.read(getAssets(), "specs/" + shader));
             String code = Recipe.encode(recipe.toString());
             startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain")
                     .putExtra(Intent.EXTRA_TEXT, code), "Share look code"));
