@@ -1,5 +1,5 @@
 ; asciipaper for Windows: per-user installer (no administrator rights needed).
-; Build: iscc /DAppVersion=1.4.0 windows\installer.iss   (after building windows\asciipaper.csproj)
+; Build: iscc /DAppVersion=1.4.1 windows\installer.iss   (after building windows\asciipaper.csproj)
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
