@@ -12,7 +12,10 @@
     <RootNamespace>Asciipaper</RootNamespace>
     <ApplicationIcon>asciipaper.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.4.0</Version>
+    <!-- 32-bit on purpose: the Windows build ships only the x86 WebView2Loader.dll, and a 64-bit
+         process cannot load it (BadImageFormatException, shown as "WebView2 missing"). -->
+    <PlatformTarget>x86</PlatformTarget>
+    <Version>1.4.1</Version>
     <Product>asciipaper</Product>
     <Company>cYoren</Company>
     <Description>Live, interactive ASCII wallpapers</Description>
