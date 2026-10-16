@@ -187,6 +187,8 @@ static int use_preset(const struct preset *p) {
     glUniform4fv(glGetUniformLocation(glyph_prog, "fxA"), 1, P->fx);
     glUniform4fv(glGetUniformLocation(glyph_prog, "fxB"), 1, P->fx + 4);
     glUniform4fv(glGetUniformLocation(glyph_prog, "fxC"), 1, P->fx + 8);
+    glUniform4fv(glGetUniformLocation(glyph_prog, "fxD"), 1, P->fx + 12);
+    glUniform4fv(glGetUniformLocation(glyph_prog, "fxE"), 1, P->fx + 16);
     glUseProgram(cell_prog);
     glUniform1f(glGetUniformLocation(cell_prog, "u_dither"), P->dither);
     glUniform1f(glGetUniformLocation(cell_prog, "u_interact"), P->interact);

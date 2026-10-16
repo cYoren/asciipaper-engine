@@ -186,6 +186,8 @@ final class Renderer implements GLSurfaceView.Renderer {
         GLES20.glUniform4fv(loc(glyphProg, "fxA"), 1, look.effects, 0);
         GLES20.glUniform4fv(loc(glyphProg, "fxB"), 1, look.effects, 4);
         GLES20.glUniform4fv(loc(glyphProg, "fxC"), 1, look.effects, 8);
+        GLES20.glUniform4fv(loc(glyphProg, "fxD"), 1, look.effects, 12);
+        GLES20.glUniform4fv(loc(glyphProg, "fxE"), 1, look.effects, 16);
         u2(glyphProg, "grid", cols, rows); u2(glyphProg, "cell", cw, ch); u2(glyphProg, "atlasSize", atlasW, atlasH);
         u(glyphProg, "tile", tile); u(glyphProg, "pad", PAD);
         GLES20.glUseProgram(cellProg);

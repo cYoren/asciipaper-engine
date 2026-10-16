@@ -28,7 +28,7 @@ struct preset {
     float shape, dither;                                    // indices into SHAPES / DITHERS (spec.c)
     int npalette;                                           // 0 = the shader's own colours
     float palette[16 * 3];
-    float fx[12];                                           // post effects, in FX order (spec.c)
+    float fx[20];                                           // post effects, in FX order (spec.c)
     float interact, interact_strength, interact_radius;
     float pace;                                             // this wallpaper's own speed (0 = 1); the user's Speed multiplies it     // pointer interaction: INTERACTIONS index, 0..2, reach
     void (*resize)(struct scene *);

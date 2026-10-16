@@ -19,7 +19,7 @@ final class Look {
     String glsl, scene, media, charset = " .:-=+*#%@", font;
     float cell = 8, aspect = .6f, maxCells = 40000, fill, time, period = (float) (2000 * Math.PI), shape, dither, interact, interactStrength = 1, interactRadius = .25f, pace = 1;
     int weight;
-    float[] background = {.03f, .035f, .035f}, palette = new float[0], effects = new float[12];
+    float[] background = {.03f, .035f, .035f}, palette = new float[0], effects = new float[20];
     JSONObject uniforms = new JSONObject();
 
     static String read(AssetManager assets, String path) throws IOException {
