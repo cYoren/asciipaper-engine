@@ -35,7 +35,12 @@
   "diagonal",
   "voxel",
   "disco",
-  "cmyk"
+  "cmyk",
+  "truchet",
+  "hex",
+  "crosshatch",
+  "stitch",
+  "stipple"
  ],
  "dithers": [
   "none",
@@ -101,6 +106,38 @@
   "flicker": [
    0,
    1
+  ],
+  "posterize": [
+   0,
+   1
+  ],
+  "edgeGlow": [
+   0,
+   1
+  ],
+  "vhs": [
+   0,
+   1
+  ],
+  "pixelSort": [
+   0,
+   1
+  ],
+  "tiltShift": [
+   0,
+   1
+  ],
+  "emboss": [
+   0,
+   1
+  ],
+  "mirror": [
+   0,
+   1
+  ],
+  "lightLeak": [
+   0,
+   1
   ]
  },
  "warps": [
@@ -111,7 +148,10 @@
   "zigzag",
   "polar",
   "kaleidoscope",
-  "shear"
+  "shear",
+  "droste",
+  "tiles",
+  "flag"
  ],
  "palettes": {
   "mono": [
@@ -291,6 +331,81 @@
    "#a8794a",
    "#d9b77e",
    "#f2e3c0"
+  ],
+  "nightVision": [
+   "#020a02",
+   "#0b3d0b",
+   "#2f8f2a",
+   "#8cf26f",
+   "#e4ffd6"
+  ],
+  "xray": [
+   "#03060c",
+   "#16304f",
+   "#5d8fc2",
+   "#cfe6ff",
+   "#ffffff"
+  ],
+  "cyanotype": [
+   "#0b2a4a",
+   "#174a7c",
+   "#4f7fae",
+   "#a9c6dd",
+   "#eef4f6"
+  ],
+  "infrared": [
+   "#120612",
+   "#5c1036",
+   "#d0306a",
+   "#ff9cc0",
+   "#fff1f6"
+  ],
+  "amber": [
+   "#0a0600",
+   "#4a2a00",
+   "#b86a00",
+   "#ffb000",
+   "#ffe2a0"
+  ],
+  "teletext": [
+   "#000000",
+   "#ff0000",
+   "#00ff00",
+   "#ffff00",
+   "#0000ff",
+   "#ff00ff",
+   "#00ffff",
+   "#ffffff"
+  ],
+  "sunset": [
+   "#1b0b2e",
+   "#5b1a4d",
+   "#b8325a",
+   "#f27144",
+   "#ffc46b",
+   "#fff1c9"
+  ],
+  "ocean": [
+   "#03141f",
+   "#08354d",
+   "#0f6b80",
+   "#3fb3b0",
+   "#a8eadb"
+  ],
+  "forest": [
+   "#0d1a0f",
+   "#1f3b22",
+   "#3f6b37",
+   "#8aa85b",
+   "#dfe6b4"
+  ],
+  "candy": [
+   "#2b1b3d",
+   "#ff6fb5",
+   "#ffd166",
+   "#7bf1a8",
+   "#6ec3ff",
+   "#fff7fb"
   ]
  },
  "styles": {
@@ -626,6 +741,174 @@
    "effects": {
     "rgbSplit": 1
    }
+  },
+  "maze": {
+   "about": "Endless curling maze of quarter circles",
+   "shape": "truchet",
+   "aspect": 1,
+   "cell": 14,
+   "fill": 0
+  },
+  "hex": {
+   "about": "Hexagon tiles sized by brightness",
+   "shape": "hex",
+   "aspect": 1,
+   "cell": 12,
+   "fill": 0
+  },
+  "crosshatch": {
+   "about": "Pen hatching on paper, darker means more strokes",
+   "shape": "crosshatch",
+   "aspect": 1,
+   "cell": 10,
+   "background": "#efe9dc",
+   "palette": [
+    "#2b2722",
+    "#5a4f42"
+   ]
+  },
+  "cross-stitch": {
+   "about": "Embroidered X stitches on cloth",
+   "shape": "stitch",
+   "aspect": 1,
+   "cell": 12,
+   "background": "#e9e2d0"
+  },
+  "stipple": {
+   "about": "Ink dots, denser where it is darker",
+   "shape": "stipple",
+   "aspect": 1,
+   "cell": 10,
+   "background": "#f3efe6",
+   "palette": [
+    "#1f1d1a"
+   ]
+  },
+  "tape": {
+   "about": "Worn videotape with a rolling tracking line",
+   "effects": {
+    "vhs": 0.8,
+    "grain": 0.3,
+    "scanlines": 0.3,
+    "saturation": -0.2
+   }
+  },
+  "melt": {
+   "about": "Bright parts drip down in sorted streaks",
+   "shape": "pixel",
+   "aspect": 1,
+   "cell": 6,
+   "fill": 0,
+   "effects": {
+    "pixelSort": 0.7
+   }
+  },
+  "night-vision": {
+   "about": "Green goggles with grain",
+   "palette": "nightVision",
+   "effects": {
+    "grain": 0.4,
+    "vignette": 0.7,
+    "scanlines": 0.2,
+    "bloom": 0.3
+   }
+  },
+  "x-ray": {
+   "about": "Glowing bones on a light box",
+   "palette": "xray",
+   "background": "#03060c",
+   "effects": {
+    "edgeGlow": 0.6,
+    "bloom": 0.15
+   }
+  },
+  "cyanotype": {
+   "about": "Sun print blue",
+   "palette": "cyanotype",
+   "background": "#0b2a4a",
+   "effects": {
+    "grain": 0.2,
+    "vignette": 0.3
+   }
+  },
+  "infrared": {
+   "about": "Infrared film pinks",
+   "palette": "infrared",
+   "effects": {
+    "grain": 0.2
+   }
+  },
+  "miniature": {
+   "about": "Tilt shift: a sharp band in the middle, soft top and bottom",
+   "effects": {
+    "tiltShift": 0.9,
+    "saturation": 0.3
+   }
+  },
+  "relief": {
+   "about": "Characters pressed into the surface",
+   "effects": {
+    "emboss": 0.8
+   }
+  },
+  "poster": {
+   "about": "Flat poster colours",
+   "effects": {
+    "posterize": 0.7,
+    "saturation": 0.4
+   }
+  },
+  "mirror": {
+   "about": "Mirrored into four symmetric quarters",
+   "effects": {
+    "mirror": 1
+   }
+  },
+  "film": {
+   "about": "Warm light leaks and film grain",
+   "effects": {
+    "lightLeak": 0.7,
+    "grain": 0.25,
+    "vignette": 0.4
+   }
+  },
+  "amber": {
+   "about": "Amber monitor phosphor",
+   "palette": "amber",
+   "background": "#0a0600",
+   "effects": {
+    "crt": 0.4,
+    "scanlines": 0.5,
+    "bloom": 0.4
+   }
+  },
+  "outline": {
+   "about": "Neon outlines along the edges",
+   "background": "#000000",
+   "effects": {
+    "edgeGlow": 1,
+    "bloom": 0.2
+   }
+  },
+  "sunset": {
+   "about": "Dusk gradient colours",
+   "palette": "sunset"
+  },
+  "ocean": {
+   "about": "Deep sea blues",
+   "palette": "ocean"
+  },
+  "forest": {
+   "about": "Moss and pine greens",
+   "palette": "forest"
+  },
+  "candy": {
+   "about": "Sweet pastel pops",
+   "palette": "candy",
+   "shape": "dots",
+   "aspect": 1,
+   "cell": 10,
+   "fill": 0
   }
  },
  "interactions": [

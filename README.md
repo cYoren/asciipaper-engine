@@ -1,6 +1,6 @@
 # asciipaper
 
-Live, interactive **ASCII wallpapers** for Windows, Linux, macOS and Android. One click turns any wallpaper into one of **38 styles**: LEGO bricks, pixel art, voxel cubes, CRT glass, Game Boy, CMYK print, Matrix code and more. Port any picture, GIF, video or post on X into ASCII art that moves on your desktop, or ask Claude to design a new one for you. Free, open source, and light on your GPU.
+Live, interactive **ASCII wallpapers** for Windows, Linux, macOS and Android. One click turns any wallpaper into one of **60 styles**: LEGO bricks, pixel art, voxel cubes, CRT glass, Game Boy, CMYK print, Matrix code and more. Port any picture, GIF, video or post on X into ASCII art that moves on your desktop, or ask Claude to design a new one for you. Free, open source, and light on your GPU.
 
 **[▶ Try it live in your browser](https://cyoren.github.io/asciipaper/)** · **[⬇ Download for Windows 10 and 11](https://github.com/cYoren/asciipaper/releases/latest)** · Linux: [one command](#install) · macOS: [with Plash](#install) · **[Android](https://github.com/cYoren/asciipaper/releases/latest)** (`asciipaper-….apk`)
 
@@ -18,7 +18,7 @@ Live, interactive **ASCII wallpapers** for Windows, Linux, macOS and Android. On
 - **Discover packs.** 27 ready-made wallpapers in six moods (Calm, Retro, Neon, Print and paper, Hacker, Toys), one click each, in every app. From a terminal: `asciipaper packs`, then `asciipaper add still-ocean`.
 - **Interaction you choose.** Each wallpaper can glow where your pointer is, magnify, push away, pull in, swirl or ripple, at the strength you like, or simply stay still.
 - **Calm by choice.** One Speed slider, right under your wallpaper, slows any scene down (or speeds it up) everywhere: Linux, Windows, Mac and Android. From a terminal: `asciipaper speed 0.5`.
-- **38 styles, live.** Pick a style, then fine-tune shapes, 21 character sets, 20 retro palettes, dithering, CRT, bloom, glitch, grain and warps. Everything changes on your desktop as you move the sliders.
+- **60 styles, live.** Pick a style, then fine-tune shapes, 21 character sets, 30 palettes, dithering, CRT, VHS, bloom, glitch, film leaks, tilt shift, pixel sorting and warps. Everything changes on your desktop as you move the sliders.
 - **Share a look in one line.** Every look is a short recipe code, and every PNG you render carries its own, so a screenshot you post *is* the wallpaper.
 - **Your AI can make them.** A built-in MCP server lets Claude, Cursor or any MCP client write wallpapers, see each attempt and set the one you like.
 - **Windows and Linux.** A Windows app with an installer (behind your desktop icons, every monitor, tray icon, starts with Windows). On Linux, Wayland desktops with layer-shell (Hyprland, KDE Plasma, Sway, niri, COSMIC, river, Wayfire, labwc). Exports for Wallpaper Engine, Lively and Plash (macOS); videos and GIFs for everything else.
@@ -81,7 +81,7 @@ asciipaper look donut palette=pico8 dither=bayer8 shape=pixel
 asciipaper text "HELLO"                # big text as a wallpaper; style it like any other
 ```
 
-- **38 styles**: character looks (classic, blocks, braille, katakana Matrix code…), grid looks (pixel art, mosaic, LEGO, voxel cubes, LED matrix, disco tiles, halftone and CMYK print, crosses, diamonds, lines, hatching), retro palettes (Game Boy, C64, PICO-8, NES, CGA), print (risograph, cyanotype, sepia, noir) and signal looks (CRT, glitch, lofi, cyberpunk, vaporwave, neon, anaglyph).
+- **60 styles**: character looks (classic, blocks, braille, katakana Matrix code…), grid looks (pixel art, mosaic, LEGO, voxel cubes, LED matrix, disco tiles, halftone and CMYK print, crosses, diamonds, lines, hatching), retro palettes (Game Boy, C64, PICO-8, NES, CGA), print (risograph, cyanotype, sepia, noir) signal looks (CRT, VHS tape, glitch, lofi, cyberpunk, vaporwave, neon, anaglyph, amber, night vision, x-ray), hand-made looks (maze, hex tiles, crosshatch, cross-stitch, stipple) and photo looks (film, miniature, melt, relief, poster, mirror).
 - **Shapes** draw each cell as a crisp vector shape instead of a glyph, at any size.
 - **21 character ramps**, **20 palettes** (or your own up to 16 colours) and **11 ordered dithers** (Bayer 2 to 16, halftone, radial, line and noise patterns), stable on moving pictures. Error-diffusion names (floyd, atkinson…) map to blue noise, because diffusion boils when the picture moves.
 - **Post effects** you can stack: vignette, scanlines, CRT curvature, RGB split, bloom, film grain, glitch, dust, flicker, saturation and hue.
@@ -193,6 +193,7 @@ WebKit applies the desktop's text-scaling factor as page zoom, so with text scal
 
 ## Credits
 
+- Many of the newer styles were inspired by [ASCII Magic](https://www.ascii-magic.com/), a lovely browser tool for turning pictures into art. asciipaper's shaders are its own code.
 - `fluid` is the [asciify.org Fluid background](https://asciify.org/docs/backgrounds/fluid), offline: `FluidField` and `paintLiquidSource` ported from [asciify-engine](https://github.com/ayangabryl/asciify-engine) by [ayangabryl](https://github.com/ayangabryl), MIT ([`licenses/asciify-engine-MIT.txt`](licenses/asciify-engine-MIT.txt)). Its glyph table comes from the unmodified engine (`wallpapers/lib/asciify-core.js`).
 - Layer-shell protocol from [wlr-protocols](https://gitlab.freedesktop.org/wlroots/wlr-protocols); the Studio's background layer through [gtk4-layer-shell](https://github.com/wmww/gtk4-layer-shell).
 - Posts on X are fetched through [FxTwitter](https://github.com/FixTweet/FxTwitter). Only port media you have the right to use.

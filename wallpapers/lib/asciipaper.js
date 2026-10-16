@@ -135,10 +135,11 @@ float g=u_useLut>0.5?texture2D(u_lut,vec2((floor(l*255.0+0.5)+0.5)/256.0,0.5)).a
 gl_FragColor=vec4(g/255.0,rgb);}`;
   // Pass 2: `fill` (0..1) lays each glyph's colour faintly behind it, scaled by its density, so pictures read
   // through the gaps; `shape` draws pixels, tiles, dots, LEGO… instead of glyphs; fxA/B/C are the post effects.
-  const GLYPHS = `precision highp float;varying vec2 v_uv;uniform sampler2D cells,atlas;uniform vec2 grid,cell,atlasSize;uniform float tile,pad,fill,glyphs,shape,time;uniform vec3 bg;uniform vec4 fxA,fxB,fxC;
+  const GLYPHS = `precision highp float;varying vec2 v_uv;uniform sampler2D cells,atlas;uniform vec2 grid,cell,atlasSize;uniform float tile,pad,fill,glyphs,shape,time;uniform vec3 bg;uniform vec4 fxA,fxB,fxC,fxD,fxE;
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 vec4 at(vec2 p){return texture2D(cells,(floor(p*grid)+0.5)/grid);}
 float inside(float d){return clamp(0.5-d,0.0,1.0);}
+float lum(vec4 e){return dot(e.gba,vec3(0.299,0.587,0.114))*min(e.r*255.0,1.0);}
 float box(vec2 q,vec2 h){vec2 d=abs(q)-h;return length(max(d,0.0))+min(max(d.x,d.y),0.0);}
 vec3 cmyk(vec2 px){vec3 col=bg;vec4 ang=vec4(0.26,1.31,0.0,0.79);float s=min(cell.x,cell.y)*0.9;
 for(int k=0;k<4;k++){float a=ang[k];mat2 r=mat2(cos(a),-sin(a),sin(a),cos(a));vec2 q=r*px,c=(floor(q/s)+0.5)*s;
@@ -149,9 +150,18 @@ return col;}
 vec3 draw(vec2 p){vec4 d=at(p);vec2 l=fract(vec2(p.x,1.0-p.y)*grid);float g=floor(d.r*255.0+0.5),v=g/max(glyphs-1.0,1.0),s=floor(shape+0.5);
 vec3 under=bg+d.gba*fill*v,c=d.gba;
 if(s<0.5){float cols=floor(atlasSize.x/tile);vec2 uv=(vec2(mod(g,cols)*tile,floor(g/cols)*(ceil(cell.y)+pad*2.0))+pad+l*cell)/atlasSize;return mix(under,c,texture2D(atlas,uv).a);}
-if(s>11.5)return cmyk(p*grid*cell);
+if(s>11.5&&s<12.5)return cmyk(p*grid*cell);
 vec2 q=(l-0.5)*cell;float r=min(cell.x,cell.y)*0.5,gap=max(1.0,r*0.12),k=0.0;
 if(g<0.5&&s!=4.0)return under;
+if(s>12.5){vec2 id=floor(p*grid);
+if(s<13.5){vec2 u=l-0.5;if(hash(id)>0.5)u.x=-u.x;float d=min(abs(length(u-0.5)-0.5),abs(length(u+0.5)-0.5));k=inside(d*r*2.0-max(0.7,r*0.45*v));}
+else if(s<14.5){vec2 a=abs(q);k=inside(max(a.x*0.866+a.y*0.5,a.y)-r*1.05*sqrt(v));}
+else if(s<15.5){vec2 x=p*grid*cell;float sp=max(4.0,r*1.2),w=0.6;
+k=inside(abs(mod(x.x+x.y,sp)-sp*0.5)-w)*step(0.15,v);k=max(k,inside(abs(mod(x.x-x.y,sp)-sp*0.5)-w)*step(0.4,v));
+k=max(k,inside(abs(mod(x.y,sp)-sp*0.5)-w)*step(0.65,v));k=max(k,inside(abs(mod(x.x,sp)-sp*0.5)-w)*step(0.85,v));}
+else if(s<16.5){k=inside(min(abs(q.x-q.y),abs(q.x+q.y))*0.707-max(0.8,r*0.2))*inside(box(q,vec2(r*0.78)));c*=0.85+0.3*hash(id+0.5);}
+else{for(int i=0;i<6;i++){float fi=float(i);if(hash(id+fi*7.1)<v*1.1){vec2 o=vec2(hash(id+fi*3.3),hash(id+fi*5.7))-0.5;k=max(k,inside(length(q-o*cell*0.8)-max(0.8,r*0.2)));}}}
+return mix(under,c,k);}
 if(s<1.5)return c;
 if(s<2.5||s>10.5){k=inside(box(q,cell*0.5-gap));
 if(s>10.5){vec2 id=floor(p*grid);c+=pow(max(0.0,sin(time*2.0+hash(id)*6.283)),24.0)*inside(length(q+r*0.35)-r*0.25)*0.9;}}
@@ -166,12 +176,23 @@ else if(s<9.5)k=inside(abs(q.x+q.y)*0.707-r*0.75*v);
 else{float h=r*(0.35+0.6*v);k=inside(box(q,vec2(h)));c*=q.y<-h*0.35?1.25:q.x>h*0.35?0.62:1.0;}
 return mix(under,c,k);}
 void main(){vec2 p=v_uv;
+if(fxE.y>0.0){p.x=0.5-abs(p.x-0.5);if(fxE.y>0.5)p.y=0.5-abs(p.y-0.5);}
+float roll=fxD.y>0.0?smoothstep(0.05,0.0,abs(p.y-fract(1.0-time*0.06))):0.0;
+if(fxD.y>0.0)p.x+=(hash(vec2(floor(p.y*grid.y*2.0),floor(time*24.0)))-0.5)*0.012*fxD.y*(0.2+roll*5.0);
 if(fxA.z>0.0){vec2 o=p-0.5;p=0.5+o*(1.0+fxA.z*0.35*dot(o,o)*4.0);if(p.x<0.0||p.x>1.0||p.y<0.0||p.y>1.0){gl_FragColor=vec4(0.0,0.0,0.0,1.0);return;}}
 if(fxB.y>0.0){float t=floor(time*9.0),band=floor(p.y*18.0+hash(vec2(t,3.0))*6.0);if(hash(vec2(band,t))<fxB.y*0.35)p.x=fract(p.x+(hash(vec2(t,band))-0.5)*0.12*fxB.y);}
 vec3 col=draw(p);
-if(fxA.w>0.0){float o=fxA.w*6.0/(grid.x*cell.x);col.r=draw(p+vec2(o,0.0)).r;col.b=draw(p-vec2(o,0.0)).b;}
+float split=fxA.w+fxD.y*0.6;
+if(split>0.0){float o=split*6.0/(grid.x*cell.x);col.r=draw(p+vec2(o,0.0)).r;col.b=draw(p-vec2(o,0.0)).b;}
 if(fxB.z>0.0){vec3 b=vec3(0.0);for(int i=-1;i<=1;i++)for(int j=-1;j<=1;j++){vec4 e=texture2D(cells,(floor(p*grid)+vec2(float(i),float(j))+0.5)/grid);
 b+=e.gba*min(e.r*255.0,1.0)/(1.0+float(i*i+j*j));}col+=b*fxB.z*0.22;}
+if(fxD.z>0.0){vec3 st=vec3(0.0);float n=1.0+floor(hash(vec2(floor(p.x*grid.x),1.0))*12.0*fxD.z*(0.6+0.4*sin(time*0.4+p.x*9.0)));
+for(int i=1;i<=16;i++){if(float(i)>n)break;vec4 e=at(p+vec2(0.0,float(i)/grid.y));if(lum(e)>1.0-fxD.z*0.75)st=max(st,e.gba*(1.0-float(i)/(n+1.0)));}col=max(col,st);}
+if(fxD.x>0.0||fxE.x>0.0){vec2 dx=vec2(1.0/grid.x,0.0),dy=vec2(0.0,1.0/grid.y);float gx=lum(at(p+dx))-lum(at(p-dx)),gy=lum(at(p+dy))-lum(at(p-dy));
+col=bg+(col-bg)*(1.0+length(vec2(gx,gy))*fxD.x*3.0);col*=1.0+(gx-gy)*fxE.x*1.4;}
+if(fxD.w>0.0){vec3 b=vec3(0.0);for(int i=-2;i<=2;i++)for(int j=-2;j<=2;j++){vec4 e=at(p+vec2(float(i),float(j))*1.5/grid);b+=e.gba*min(e.r*255.0,1.0)+bg*(1.0-min(e.r*255.0,1.0));}
+col=mix(col,b/25.0,smoothstep(0.12,0.42,abs(v_uv.y-0.5))*fxD.w);}
+if(fxC.w>0.0){float n=mix(10.0,2.0,fxC.w);col=floor(clamp(col,0.0,1.0)*n+0.5)/n;}
 if(fxC.x!=0.0){float y=dot(col,vec3(0.299,0.587,0.114));col=mix(vec3(y),col,1.0+fxC.x);}
 if(fxC.y!=0.0){float a=fxC.y*6.283;vec3 k=vec3(0.57735);col=col*cos(a)+cross(k,col)*sin(a)+k*dot(k,col)*(1.0-cos(a));}
 if(fxA.y>0.0)col*=1.0-fxA.y*0.55*(0.5+0.5*cos(gl_FragCoord.y*2.094));
@@ -179,14 +200,18 @@ if(fxA.x>0.0)col*=1.0-fxA.x*smoothstep(0.35,1.0,length(v_uv-0.5)*1.41);
 if(fxB.x>0.0)col+=(hash(gl_FragCoord.xy+fract(time*7.0)*91.0)-0.5)*fxB.x*0.35;
 if(fxB.w>0.0)col=mix(col,vec3(0.82),step(1.0-fxB.w*0.004,hash(floor(gl_FragCoord.xy/2.0)+floor(time*12.0)*7.31)));
 if(fxC.z>0.0)col*=1.0-fxC.z*0.12*hash(vec2(floor(time*20.0),5.0));
+if(fxD.y>0.0)col+=roll*fxD.y*0.25*hash(gl_FragCoord.xy*0.37+time);
+if(fxE.z>0.0){vec2 a=vec2(0.15+0.12*sin(time*0.13),0.85+0.08*cos(time*0.17)),b=vec2(0.9+0.06*cos(time*0.11),0.1+0.1*sin(time*0.09));
+vec3 leak=vec3(1.0,0.42,0.12)*smoothstep(0.75,0.0,length((v_uv-a)*vec2(1.4,1.0)))+vec3(0.95,0.2,0.45)*smoothstep(0.6,0.0,length((v_uv-b)*vec2(1.4,1.0)))*0.7;
+col=1.0-(1.0-col)*(1.0-clamp(leak*0.55*fxE.z,0.0,1.0));}
 gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
   const CPU_CELL = 'vec4 cell(vec2 uv){return texture2D(u_data,uv);}';
   const PAD = 3;
   // Look names, by index: the same tables as native/spec.c. A config may also give the index.
-  const SHAPES = ['glyph', 'pixel', 'mosaic', 'dots', 'led', 'lego', 'cross', 'diamond', 'lines', 'diagonal', 'voxel', 'disco', 'cmyk'];
+  const SHAPES = ['glyph', 'pixel', 'mosaic', 'dots', 'led', 'lego', 'cross', 'diamond', 'lines', 'diagonal', 'voxel', 'disco', 'cmyk', 'truchet', 'hex', 'crosshatch', 'stitch', 'stipple'];
   const DITHERS = ['none', 'bayer2', 'bayer4', 'bayer8', 'bayer16', 'halftone', 'radial', 'linesH', 'linesV', 'linesD', 'whiteNoise', 'blueNoise'];
   const INTERACTIONS = ['none', 'glow', 'magnify', 'repel', 'attract', 'swirl', 'ripple'];
-  const FX = ['vignette', 'scanlines', 'crt', 'rgbSplit', 'grain', 'glitch', 'bloom', 'dust', 'saturation', 'hue', 'flicker', ''];
+  const FX = ['vignette', 'scanlines', 'crt', 'rgbSplit', 'grain', 'glitch', 'bloom', 'dust', 'saturation', 'hue', 'flicker', 'posterize', 'edgeGlow', 'vhs', 'pixelSort', 'tiltShift', 'emboss', 'mirror', 'lightLeak', ''];
   const named = (v, names) => typeof v === 'number' ? v : Math.max(0, names.indexOf(v));
   const rgb = v => (v.match(/[0-9a-f]{2}/gi) || ['00', '00', '00']).map(h => parseInt(h, 16) / 255);
   let lastScene = null;
@@ -226,7 +251,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
     gl.uniform1f(glyphProg.u('fill'), cfg.fill); gl.uniform1f(glyphProg.u('glyphs'), chars.length);
     gl.uniform1f(glyphProg.u('shape'), named(cfg.shape || 0, SHAPES));
     const fx = FX.map(k => Number(cfg.effects?.[k]) || 0);
-    ['fxA', 'fxB', 'fxC'].forEach((k, i) => gl.uniform4fv(glyphProg.u(k), fx.slice(i * 4, i * 4 + 4)));
+    ['fxA', 'fxB', 'fxC', 'fxD', 'fxE'].forEach((k, i) => gl.uniform4fv(glyphProg.u(k), fx.slice(i * 4, i * 4 + 4)));
     gl.useProgram(cellProg);
     const palette = (cfg.palette || []).slice(0, 16).map(rgb);
     // interaction: how the wallpaper answers the pointer, on top of whatever the scene does itself

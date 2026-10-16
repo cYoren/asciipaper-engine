@@ -12,7 +12,12 @@
     "diagonal",
     "voxel",
     "disco",
-    "cmyk"
+    "cmyk",
+    "truchet",
+    "hex",
+    "crosshatch",
+    "stitch",
+    "stipple"
   ],
   "DITHERS": [
     "none",
@@ -39,7 +44,15 @@
     "dust",
     "saturation",
     "hue",
-    "flicker"
+    "flicker",
+    "posterize",
+    "edgeGlow",
+    "vhs",
+    "pixelSort",
+    "tiltShift",
+    "emboss",
+    "mirror",
+    "lightLeak"
   ],
   "INTERACTIONS": [
     "none",

@@ -16,7 +16,7 @@ uniform vec3 tint, tint2;
 uniform float lens;         // magnify around the pointer
 uniform float ripple;       // clicks send a wave through the picture
 uniform float backdrop;     // 0..1: fill the rest of the screen with a dim, enlarged copy of the picture
-uniform float warp;         // 0 none, 1 twirl, 2 spherize (pinch below 0), 3 ripple, 4 zigzag, 5 polar, 6 kaleidoscope, 7 shear
+uniform float warp;         // 0 none, 1 twirl, 2 spherize (pinch below 0), 3 ripple, 4 zigzag, 5 polar, 6 kaleidoscope, 7 shear, 8 droste, 9 tiles, 10 flag
 uniform float warpAmount;   // how strong; every warp moves slowly with time
 
 vec2 warped(vec2 uv){
@@ -29,7 +29,10 @@ vec2 warped(vec2 uv){
   else if(warp<4.5){c.x+=sin(c.y*30.0+t*2.0)*0.02*w; return c/k+0.5;}
   else if(warp<5.5) return vec2(fract(a/6.283+0.5+t*0.01),clamp(r*1.6/(0.4+w),0.0,1.0));
   else if(warp<6.5){float n=floor(3.0+w*6.0), s=6.283/n; a=abs(mod(a+t*0.1,s)-s*0.5);}
-  else {c.x+=c.y*w*sin(t*0.4); return c/k+0.5;}
+  else if(warp<7.5){c.x+=c.y*w*sin(t*0.4); return c/k+0.5;}
+  else if(warp<8.5){float L=log(2.0+w*3.0); a+=log(max(r,1e-4))*w*0.5; r=0.5*exp(mod(log(max(r,1e-4))-t*0.04,L)-L);}
+  else if(warp<9.5){float n=floor(2.0+w*3.0); return fract(uv*n+t*0.005);}
+  else {c.y+=sin(c.x*8.0+t*1.5)*0.035*w; c.x+=sin(c.y*6.0+t)*0.01*w; return c/k+0.5;}
   return vec2(cos(a),sin(a))*r/k+0.5;
 }
 
