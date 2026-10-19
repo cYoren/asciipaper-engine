@@ -1,0 +1,110 @@
+# One-off build branch only. Branch and source SHA are hard-coded; no user-supplied event data is used.
+name: Temporary ASCII Paper macOS Release Build from main
+on:
+  push:
+    branches:
+      - "build/asciipaper-macos-release-20261018"
+permissions:
+  contents: read
+jobs:
+  macos-release:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact main source
+        uses: actions/checkout@v4
+        with:
+          repository: cYoren/asciipaper
+          ref: c858414c9cfd1f68cac6a94a053ea7ae9c761179
+          path: source
+          persist-credentials: false
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Check generated runtime source
+        working-directory: source
+        run: python3 tools/generate_runtime.py --check
+
+      - name: Generate Xcode project
+        working-directory: source/apple
+        run: xcodegen generate --spec project.yml
+
+      - name: Build macOS Release app
+        working-directory: source
+        run: |
+          set -euo pipefail
+          DERIVED="$RUNNER_TEMP/derived"
+          xcodebuild \
+            -project apple/ASCIIPaper.xcodeproj \
+            -scheme ASCIIPaper-macOS \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath "$DERIVED" \
+            CODE_SIGNING_ALLOWED=NO \
+            CURRENT_PROJECT_VERSION=4 \
+            build
+          APP="$DERIVED/Build/Products/Release/ASCIIPaper-macOS.app"
+          test -d "$APP"
+          BUNDLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
+          BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")
+          test "$BUNDLE" = 'io.github.cyoren.asciipaper.macos'
+          test "$VERSION" = '1.4.0'
+          test "$BUILD" = '4'
+          printf 'BUNDLE=%s\nVERSION=%s\nBUILD=%s\n' "$BUNDLE" "$VERSION" "$BUILD"
+
+      - name: Run macOS Studio self-test
+        working-directory: source
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/derived/Build/Products/Release/ASCIIPaper-macOS.app"
+          mkdir -p "$RUNNER_TEMP/selftest"
+          "$APP/Contents/MacOS/ASCIIPaper-macOS" --selftest "$RUNNER_TEMP/selftest" &
+          task_pid=$!
+          for attempt in {1..120}; do
+            if ! kill -0 "$task_pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if kill -0 "$task_pid" 2>/dev/null; then
+            kill "$task_pid"
+            echo 'macOS self-test timed out'
+            exit 1
+          fi
+          task_status=0
+          wait "$task_pid" || task_status=$?
+          test "$task_status" -eq 0
+          python3 - "$RUNNER_TEMP/selftest/selftest.json" <<'PY'
+          import json,sys
+          result=json.load(open(sys.argv[1]))
+          print(json.dumps(result,ensure_ascii=False))
+          assert result.get('ok') is True
+          PY
+
+      - name: Package unsigned Release app and provenance
+        working-directory: source
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/derived/Build/Products/Release/ASCIIPaper-macOS.app"
+          OUT="$RUNNER_TEMP/release-artifact"
+          mkdir -p "$OUT"
+          ditto -c -k --keepParent "$APP" "$OUT/ASCIIPaper-1.4.0-build4.app.zip"
+          cp apple/macOS.entitlements "$OUT/macOS.entitlements"
+          cp "$RUNNER_TEMP/selftest/selftest.json" "$OUT/selftest.json"
+          printf '%s\n' \
+            'source_repository=https://github.com/cYoren/asciipaper.git' \
+            'source_ref=main' \
+            'source_commit=c858414c9cfd1f68cac6a94a053ea7ae9c761179' \
+            'app_bundle=io.github.cyoren.asciipaper.macos' \
+            'version=1.4.0' \
+            'build=4' \
+            'configuration=Release' \
+            'code_signed=false' > "$OUT/BUILD_PROVENANCE.txt"
+          shasum -a 256 "$OUT/ASCIIPaper-1.4.0-build4.app.zip" > "$OUT/ASCIIPaper-1.4.0-build4.app.zip.sha256"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: asciipaper-macos-main-c858414-build4
+          path: ${{ runner.temp }}/release-artifact/
+          retention-days: 7
