@@ -43,15 +43,18 @@ jobs:
             -derivedDataPath "$DERIVED" \
             CODE_SIGNING_ALLOWED=NO \
             CURRENT_PROJECT_VERSION=4 \
+            INFOPLIST_KEY_LSApplicationCategoryType=public.app-category.graphics-design \
             build
           APP="$DERIVED/Build/Products/Release/ASCIIPaper-macOS.app"
           test -d "$APP"
           BUNDLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")
           VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
           BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")
+          CATEGORY=$(/usr/libexec/PlistBuddy -c 'Print :LSApplicationCategoryType' "$APP/Contents/Info.plist")
           test "$BUNDLE" = 'io.github.cyoren.asciipaper.macos'
           test "$VERSION" = '1.4.0'
           test "$BUILD" = '4'
+          test "$CATEGORY" = 'public.app-category.graphics-design'
           printf 'BUNDLE=%s\nVERSION=%s\nBUILD=%s\n' "$BUNDLE" "$VERSION" "$BUILD"
 
       - name: Run macOS Studio self-test
