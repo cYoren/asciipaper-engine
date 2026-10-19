@@ -47,6 +47,15 @@ jobs:
             build
           APP="$DERIVED/Build/Products/Release/ASCIIPaper-macOS.app"
           test -d "$APP"
+          python3 - "$APP/Contents/Info.plist" <<'PY'
+          import plistlib,sys
+          path=sys.argv[1]
+          with open(path,'rb') as f:
+              info=plistlib.load(f)
+          info['ITSAppUsesNonExemptEncryption']=False
+          with open(path,'wb') as f:
+              plistlib.dump(info,f)
+          PY
           BUNDLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")
           VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
           BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")
@@ -55,6 +64,8 @@ jobs:
           test "$VERSION" = '1.4.0'
           test "$BUILD" = '4'
           test "$CATEGORY" = 'public.app-category.graphics-design'
+          ENCRYPTION=$(/usr/bin/python3 -c "import plistlib,sys; print(str(plistlib.load(open(sys.argv[1], 'rb'))['ITSAppUsesNonExemptEncryption']).lower())" "$APP/Contents/Info.plist")
+          test "$ENCRYPTION" = 'false'
           printf 'BUNDLE=%s\nVERSION=%s\nBUILD=%s\n' "$BUNDLE" "$VERSION" "$BUILD"
 
       - name: Run macOS Studio self-test
@@ -102,6 +113,8 @@ jobs:
             'version=1.4.0' \
             'build=4' \
             'configuration=Release' \
+            'app_category=public.app-category.graphics-design' \
+            'uses_non_exempt_encryption=false' \
             'code_signed=false' > "$OUT/BUILD_PROVENANCE.txt"
           shasum -a 256 "$OUT/ASCIIPaper-1.4.0-build4.app.zip" > "$OUT/ASCIIPaper-1.4.0-build4.app.zip.sha256"
 
