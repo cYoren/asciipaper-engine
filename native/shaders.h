@@ -81,7 +81,7 @@ static const char GLYPHS[] =
     "void main(){vec2 p=v_uv;\n"
     "if(fxE.y>0.0){p.x=0.5-abs(p.x-0.5);if(fxE.y>0.5)p.y=0.5-abs(p.y-0.5);}\n"
     "float roll=fxD.y>0.0?smoothstep(0.05,0.0,abs(p.y-fract(1.0-time*0.06))):0.0;\n"
-    "if(fxD.y>0.0)p.x+=(hash(vec2(floor(p.y*grid.y*2.0),floor(time*24.0)))-0.5)*0.012*fxD.y*(0.2+roll*5.0);\n"
+    "if(fxD.y>0.0)p.x+=(hash(vec2(floor(p.y*grid.y*2.0),floor(time*8.0)))-0.5)*0.012*fxD.y*(0.2+roll*5.0);\n"
     "if(fxA.z>0.0){vec2 o=p-0.5;p=0.5+o*(1.0+fxA.z*0.35*dot(o,o)*4.0);if(p.x<0.0||p.x>1.0||p.y<0.0||p.y>1.0){gl_FragColor=vec4(0.0,0.0,0.0,1.0);return;}}\n"
     "if(fxB.y>0.0){float t=floor(time*9.0),band=floor(p.y*18.0+hash(vec2(t,3.0))*6.0);if(hash(vec2(band,t))<fxB.y*0.35)p.x=fract(p.x+(hash(vec2(t,band))-0.5)*0.12*fxB.y);}\n"
     "vec3 col=draw(p);\n"

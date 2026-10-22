@@ -1,19 +1,5 @@
 [
   {
-    "name": "donut",
-    "title": "Donut",
-    "kind": "spec",
-    "url": "run.html?spec=specs/donut.json",
-    "spec": "specs/donut.json"
-  },
-  {
-    "name": "fire",
-    "title": "Fire",
-    "kind": "spec",
-    "url": "run.html?spec=specs/fire.json",
-    "spec": "specs/fire.json"
-  },
-  {
     "name": "flow",
     "title": "Flow",
     "kind": "spec",
@@ -35,13 +21,6 @@
     "spec": "specs/matrix.json"
   },
   {
-    "name": "ocean",
-    "title": "Ocean",
-    "kind": "spec",
-    "url": "run.html?spec=specs/ocean.json",
-    "spec": "specs/ocean.json"
-  },
-  {
     "name": "plasma",
     "title": "Plasma",
     "kind": "spec",
@@ -54,13 +33,6 @@
     "kind": "spec",
     "url": "run.html?spec=specs/starfield.json",
     "spec": "specs/starfield.json"
-  },
-  {
-    "name": "synthwave",
-    "title": "Synthwave",
-    "kind": "spec",
-    "url": "run.html?spec=specs/synthwave.json",
-    "spec": "specs/synthwave.json"
   },
   {
     "name": "tunnel",
