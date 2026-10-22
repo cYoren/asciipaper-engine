@@ -1,0 +1,74 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>asciipaper engine: embedded</title>
+<!-- One wallpaper in a page section. The runtime leaves a canvas you provide alone, so the
+     scene can be a hero, a card, a footer: any box, any size. Open over http(s). -->
+<script src="./lib/asciipaper.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #07090a; color: #d8e6e3; font: 16px/1.55 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; padding: 48px 24px 96px; }
+  h1 { font-size: clamp(28px, 5vw, 52px); line-height: 1.05; letter-spacing: -.02em; margin: 0 0 16px; }
+  p { color: #8fa8a4; max-width: 62ch; }
+  .hero {
+    position: relative; overflow: hidden; border-radius: 18px;
+    border: 1px solid #16262a; background: #050708;
+    aspect-ratio: 16 / 9; margin: 32px 0 40px;
+  }
+  .hero canvas { display: block; width: 100%; height: 100%; }
+  .hero .copy { position: absolute; inset: auto 0 0 0; padding: 28px; background: linear-gradient(transparent, #050708ee 55%); }
+  .hero .copy h2 { margin: 0 0 6px; font-size: clamp(22px, 3vw, 34px); }
+  .hero .copy span { color: #79c9bd; font: 13px/1.4 ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
+  .card { display: grid; grid-template-columns: 180px 1fr; gap: 20px; align-items: center; border: 1px solid #16262a; border-radius: 14px; padding: 16px; margin-top: 12px; }
+  .card canvas { width: 180px; height: 110px; border-radius: 10px; display: block; }
+  .card strong { display: block; margin-bottom: 4px; }
+  code { color: #8de5d7; }
+</style>
+<main>
+  <h1>One shader, any box.</h1>
+  <p>Both scenes on this page are the same engine as a full-screen wallpaper. Pass your own
+     <code>canvas</code> and the runtime sizes the cells to it.</p>
+
+  <section class="hero">
+    <canvas id="hero"></canvas>
+    <div class="copy"><span>asciipaper engine</span><h2>Live ASCII, embedded</h2></div>
+  </section>
+
+  <div class="card">
+    <canvas id="card"></canvas>
+    <div><strong>A second canvas</strong>Same runtime, different shader, 180 × 110.</div>
+  </div>
+</main>
+<script>
+  const hero = document.getElementById('hero');
+  hero.width = 960; hero.height = 540;   // the canvas is re-sized to its box anyway
+  asciipaper.ascii({
+    canvas: hero,
+    charset: ' .:-=+*#%@',
+    cell: 9, aspect: .55, fill: .2, background: '#050708',
+    glsl: `
+      vec4 cell(vec2 uv){
+        vec2 p=(uv-0.5)*vec2(u_aspect,1.0);
+        float t=u_time*.25;
+        float waves=sin(p.x*7.0+t*1.6)+sin(p.y*9.0-t*1.1)+sin((p.x+p.y)*6.0+t*.7);
+        float level=clamp(.5+.22*waves+.18*sin(length(p)*14.0-t*2.0),0.0,1.0);
+        vec3 ink=mix(vec3(.12,.36,.44),vec3(.62,.94,.86),level);
+        return vec4(ink*(.35+.85*level),level);
+      }`
+  });
+
+  const card = document.getElementById('card');
+  asciipaper.ascii({
+    canvas: card,
+    charset: ' .:-=+*#%@',
+    cell: 6, aspect: .6, fill: .25, background: '#080b0c',
+    glsl: `
+      vec4 cell(vec2 uv){
+        float r=length((uv-vec2(.5,.55))*vec2(u_aspect,1.0));
+        float level=clamp(1.0-r*1.6+0.25*sin(u_time*.8+r*18.0),0.0,1.0);
+        vec3 ink=mix(vec3(.2,.5,.5),vec3(1.0,.78,.45),level);
+        return vec4(ink*(.3+.9*level),level);
+      }`
+  });
+</script>
