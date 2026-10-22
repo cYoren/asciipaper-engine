@@ -222,8 +222,9 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
       font: '"JetBrains Mono", ui-monospace, monospace', time: 0, period: 2000 * Math.PI, fill: 0}, config);
     const chars = [...cfg.charset];
     if (chars.length > 256) throw new Error('asciipaper: charset is limited to 256 glyphs');
+    const embedded = !!cfg.canvas;   // a canvas you placed yourself (a page section, a card): leave its layout alone
     const canvas = cfg.canvas || (document.body || document.documentElement).appendChild(document.createElement('canvas'));
-    canvas.style.cssText += ';position:fixed;inset:0;width:100vw;height:100vh;display:block';
+    if (!embedded) canvas.style.cssText += ';position:fixed;inset:0;width:100vw;height:100vh;display:block';
     canvas.addEventListener('webglcontextlost', e => e.preventDefault());
     canvas.addEventListener('webglcontextrestored', () => location.reload());   // e.g. after suspend
     const gl = canvas.getContext('webgl', {antialias: false, depth: false, stencil: false, alpha: false, preserveDrawingBuffer: !!window.__asciipaperThumbnail || /[?&]thumbnail\b/.test(location.search)});
@@ -288,7 +289,8 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
     };
 
     function resize() {
-      const W = innerWidth, H = innerHeight, dpr = devicePixelRatio || 1;
+      const W = embedded ? Math.max(1, canvas.clientWidth) : innerWidth, H = embedded ? Math.max(1, canvas.clientHeight) : innerHeight;
+      const dpr = devicePixelRatio || 1;
       canvas.width = Math.max(1, Math.round(W * dpr)); canvas.height = Math.max(1, Math.round(H * dpr));
       const cellW = Math.max(cfg.cell, Math.sqrt(W * H * cfg.aspect / cfg.maxCells));
       Object.assign(scene, {width: W, height: H, cols: Math.max(1, Math.floor(W / cellW)), rows: Math.max(1, Math.floor(H * cfg.aspect / cellW))});
@@ -321,6 +323,14 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
       cfg.resize?.(scene);
     }
     addEventListener('resize', resize); resize();
+    if (embedded) {
+      // Pointer over an embedded canvas is measured against the canvas, not the page.
+      canvas.addEventListener('pointermove', e => {
+        const r = canvas.getBoundingClientRect();
+        Object.assign(pointer, {x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, inside: true, moved: performance.now()});
+      }, {passive: true});
+      if (typeof ResizeObserver === 'function') new ResizeObserver(resize).observe(canvas);
+    }
 
     const clicks = new Float32Array(24);
     const captures = [];
