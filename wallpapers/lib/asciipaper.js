@@ -6,7 +6,7 @@
   if (window.asciipaper?.ascii) return;
   const here = document.currentScript?.src || location.href;   // lib/ (for media.glsl)
 
-  const options = Object.assign({fps: 24, idleFps: 12, quality: 1, pointer: 1, speed: 1, clicks: false, paused: false},
+  const options = Object.assign({fps: 24, idleFps: 12, quality: 1, pointer: 1, speed: .7, clicks: false, paused: false},
                                 window.__asciipaperOptions);
   const pointer = {x: .5, y: .5, vx: 0, vy: 0, down: false, inside: false, moved: -1e9, clicks: []};
 
@@ -178,7 +178,7 @@ return mix(under,c,k);}
 void main(){vec2 p=v_uv;
 if(fxE.y>0.0){p.x=0.5-abs(p.x-0.5);if(fxE.y>0.5)p.y=0.5-abs(p.y-0.5);}
 float roll=fxD.y>0.0?smoothstep(0.05,0.0,abs(p.y-fract(1.0-time*0.06))):0.0;
-if(fxD.y>0.0)p.x+=(hash(vec2(floor(p.y*grid.y*2.0),floor(time*24.0)))-0.5)*0.012*fxD.y*(0.2+roll*5.0);
+if(fxD.y>0.0)p.x+=(hash(vec2(floor(p.y*grid.y*2.0),floor(time*8.0)))-0.5)*0.012*fxD.y*(0.2+roll*5.0);
 if(fxA.z>0.0){vec2 o=p-0.5;p=0.5+o*(1.0+fxA.z*0.35*dot(o,o)*4.0);if(p.x<0.0||p.x>1.0||p.y<0.0||p.y>1.0){gl_FragColor=vec4(0.0,0.0,0.0,1.0);return;}}
 if(fxB.y>0.0){float t=floor(time*9.0),band=floor(p.y*18.0+hash(vec2(t,3.0))*6.0);if(hash(vec2(band,t))<fxB.y*0.35)p.x=fract(p.x+(hash(vec2(t,band))-0.5)*0.12*fxB.y);}
 vec3 col=draw(p);
@@ -215,6 +215,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
   const named = (v, names) => typeof v === 'number' ? v : Math.max(0, names.indexOf(v));
   const rgb = v => (v.match(/[0-9a-f]{2}/gi) || ['00', '00', '00']).map(h => parseInt(h, 16) / 255);
   let lastScene = null;
+  let beat = 0;   // performance.now() of the last drawn frame; the macOS host watches it for stalls
 
   function ascii(config = {}) {
     const cfg = Object.assign({charset: ' .:-=+*#%@', cell: 8, aspect: .6, maxCells: 40000, background: '#080909',
@@ -334,6 +335,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
     let previous = 0;
     function frame(now) {
       requestAnimationFrame(frame);
+      beat = now;
       const dt = (previous ? Math.min(.1, (now - previous) / 1000) : 1 / 60) * options.speed * (cfg.pace || 1); previous = now;
       scene.time = cfg.time + (scene.time - cfg.time + dt) % cfg.period;   // wrapped: floats stay precise for weeks
       cfg.update?.(scene, dt);
@@ -436,6 +438,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
 
   window.asciipaper = {options, pointer, set, ascii, spec, load, patch,
     get ready() { return !!lastScene; },
+    get beat() { return beat; },
     capture: () => lastScene ? lastScene.capture() : Promise.reject(new Error('Preview is still loading')),
     onChange(callback) { addEventListener('asciipaper-settings', event => callback(event.detail)); }};
   set({});
