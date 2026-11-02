@@ -8,7 +8,7 @@
 
 - Build: `make` (produces `native/asciipaper-engine`).
 - Live wallpaper: `./native/asciipaper-engine plasma`
-- One frame: `./native/asciipaper-engine --spec wallpapers/specs/tunnel.json --lib wallpapers/lib --snapshot out.png --size 1920x1080 --seconds 6`
+- One frame: `./native/asciipaper-engine --spec wallpapers/specs/plasma.json --lib wallpapers/lib --snapshot out.png --size 1920x1080 --seconds 6`
 - Video/GIF: add `--record 30` and pipe raw BGRA frames into ffmpeg.
 - Browser: `python3 -m http.server -d wallpapers 8000`, then `/run.html?spec=specs/plasma.json`;
   `/embed.html` shows a scene inside a page section.

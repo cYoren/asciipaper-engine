@@ -35,13 +35,6 @@
     "spec": "specs/starfield.json"
   },
   {
-    "name": "tunnel",
-    "title": "Tunnel",
-    "kind": "spec",
-    "url": "run.html?spec=specs/tunnel.json",
-    "spec": "specs/tunnel.json"
-  },
-  {
     "name": "yin-yang",
     "title": "Yin-yang",
     "kind": "spec",
