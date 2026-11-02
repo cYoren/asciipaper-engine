@@ -25,7 +25,7 @@ screen of characters costs about as much as one full-screen quad.
 | Result | How |
 |---|---|
 | live wallpaper on a Wayland desktop | `./native/asciipaper-engine plasma` |
-| still image, any resolution | `./native/asciipaper-engine --spec wallpapers/specs/tunnel.json --lib wallpapers/lib --snapshot tunnel.png --size 3840x2160 --seconds 4` |
+| still image, any resolution | `./native/asciipaper-engine --spec wallpapers/specs/plasma.json --lib wallpapers/lib --snapshot plasma.png --size 3840x2160 --seconds 4` |
 | video or GIF | `--record 30 --warmup 2 \| ffmpeg -f rawvideo -pix_fmt bgra -s 1920x1080 -r 30 -i - out.mp4` |
 | background inside a web page | a `<canvas>` plus `asciipaper.ascii({canvas, glsl})` (see `wallpapers/embed.html`) |
 | a shareable wallpaper file | the same JSON spec, on any platform |
@@ -67,7 +67,7 @@ A prompt that works:
 > --snapshot frame.png --seconds 4`, look at the frame, and iterate until it reads well at
 > 1280×720 with `cell: 8`. Export a still when it is done.
 
-Read next: the spec and uniform reference below, `llms.txt`, and the three examples in
+Read next: the spec and uniform reference below, `llms.txt`, and the two examples in
 `wallpapers/specs/`.
 
 ## Two renderers, one language
