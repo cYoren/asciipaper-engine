@@ -80,6 +80,35 @@ Read next: the spec and uniform reference below, `llms.txt`, and the two example
 `native/shaders.h` and `wallpapers/lib/shaders/` are generated from the web runtime by
 `tools/generate_runtime.py`, so the two sides cannot drift apart.
 
+### What the app uses
+
+[ASCII Paper](https://github.com/cYoren/asciipaper-pro) is the app built on this engine.
+It does not fork the renderer: it pins this repository at a commit and vendors these
+files, with the changes listed below.
+
+| Platform | Renderer | File |
+|---|---|---|
+| Linux (Wayland) | native, in a layer-shell surface | `native/asciipaper-engine` |
+| Windows | WebGL runtime in WebView2 | `wallpapers/lib/asciipaper.js` |
+| macOS | WebGL runtime in WKWebView | `wallpapers/lib/asciipaper.js` |
+| Android | WebGL runtime in a WebView live wallpaper | `wallpapers/lib/asciipaper.js` |
+| Web, Studio preview, exports | WebGL runtime in a browser | `wallpapers/lib/asciipaper.js` |
+
+The app adds the Studio, Discover packs, the community and the store builds. Where it
+needs different behaviour it carries a patch instead of a fork:
+
+| Shared file | What the app changes |
+|---|---|
+| `native/spec.c`, `native/presets.c` | pictures start still; scenes push away from the pointer |
+| `wallpapers/lib/asciipaper.js` | audio and tilt reactivity, interaction defaults, CJK glyph sizing |
+| `wallpapers/lib/media.glsl` | motion effects: shimmer, pulse, wave, drift, scan, sparkle, ripple |
+| `wallpapers/lib/shaders/header.glsl`, `cell_main.glsl` | the audio and tilt uniforms |
+| `wallpapers/lib/shaders/glyphs.glsl` | the `crt` effect removed |
+
+Everything else in `native/` and `wallpapers/lib/` is this repository, byte for byte.
+The app pins the commit in `vendor/VENDOR.json` and its build fails if a shared file
+drifts from this repository by anything other than the changes above.
+
 ## Build
 
 ```sh
