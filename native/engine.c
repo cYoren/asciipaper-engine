@@ -236,7 +236,9 @@ static void build_atlas(struct output *o) {
     cairo_t *cr = cairo_create(surface);
     PangoLayout *layout = pango_cairo_create_layout(cr);
     PangoFontDescription *font = pango_font_description_from_string(P->font ? P->font : "JetBrains Mono, monospace");
-    pango_font_description_set_absolute_size(font, .9 * fmin(o->cell_w / .55, o->cell_h) * PANGO_SCALE);
+    int wide = 0;
+    for (const char *c = P->charset; *c; c = g_utf8_next_char(c)) if (g_unichar_iswide(g_utf8_get_char(c))) { wide = 1; break; }
+    pango_font_description_set_absolute_size(font, .9 * fmin(o->cell_w / (wide ? 1 : .55), o->cell_h) * PANGO_SCALE);
     if (P->weight) pango_font_description_set_weight(font, P->weight);
     pango_layout_set_font_description(layout, font);
     int i = 0;
