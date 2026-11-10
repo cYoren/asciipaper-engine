@@ -10,6 +10,7 @@ static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ?
 
 // ---- matrix.html
 static const struct preset matrix = {
+    .interact = 3, .interact_strength = 1, .interact_radius = .25,
     .name = "matrix", .charset = " ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉ0123456789ABCDEF",
     .cell = 16, .aspect = 1, .background = "#000000", .font = "monospace",
     // ${CHARS.length - 1} is 41.0
@@ -128,6 +129,7 @@ static void flow_down(struct scene *s) {
 }
 
 static const struct preset flow = {
+    .interact = 3, .interact_strength = 1, .interact_radius = .25,
     .name = "flow", .charset = " .:-=+*#%@", .cell = 10, .aspect = 10.f / 16, .background = "#080909",
     .resize = flow_resize, .update = flow_update, .pointer_move = flow_move, .pointer_down = flow_down,
 };
@@ -237,6 +239,7 @@ static const uint8_t fluid_lut[256] = {
 };
 
 static const struct preset fluid = {
+    .interact = 3, .interact_strength = 1, .interact_radius = .25,
     .name = "fluid", .charset = " .:+-=xICA$FY#@", .cell = 7, .aspect = .58f, .max_cells = 26e3f,
     .background = "#000000", .font = "JetBrains Mono, monospace", .time = 12, .period = 200 * M_PI, .lut = fluid_lut,
     .resize = fluid_resize, .update = fluid_update, .pointer_move = fluid_move, .pointer_leave = fluid_leave,
@@ -275,6 +278,7 @@ static void yin_yang_update(struct scene *s, float dt) {
 }
 
 static const struct preset yin_yang = {
+    .interact = 3, .interact_strength = 1, .interact_radius = .25,
     .name = "yin-yang", .charset = " .,:;irsXA253hMHGS#9B&@·", .cell = 9, .aspect = 9.f / 15, .background = "#080909",
     .resize = yin_yang_resize, .update = yin_yang_update, .pointer_move = fluid_move, .pointer_leave = fluid_leave,
     .glsl =

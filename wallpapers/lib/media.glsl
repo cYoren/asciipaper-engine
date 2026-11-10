@@ -1,4 +1,4 @@
-// defaults: {"fit": 0, "zoom": 1, "offset": [0, 0], "contrast": 1.15, "brightness": 0, "gamma": 1, "threshold": 0.06, "invert": 0, "colorMode": 0, "vivid": 0.5, "tint": "#e8b900", "tint2": "#ff3355", "lens": 0, "ripple": 1, "speed": 1, "backdrop": 0.3, "warp": 0, "warpAmount": 0.5}
+// defaults: {"fit": 0, "zoom": 1, "offset": [0, 0], "contrast": 1.15, "brightness": 0, "gamma": 1, "threshold": 0.06, "invert": 0, "colorMode": 0, "vivid": 0.5, "tint": "#e8b900", "tint2": "#ff3355", "lens": 0, "ripple": 1, "speed": 1, "backdrop": 0.3, "warp": 0, "warpAmount": 0.5, "motion": 0, "motionAmount": 0.6}
 // The media shader: turns a picture, GIF or video into characters. Every uniform below is a setting a
 // wallpaper can change in its "uniforms" (colours as "#rrggbb"); the line above holds the defaults.
 // asciipaper sets `media` (the current frame) and `mediaSize` (its size in pixels).
@@ -18,6 +18,8 @@ uniform float ripple;       // clicks send a wave through the picture
 uniform float backdrop;     // 0..1: fill the rest of the screen with a dim, enlarged copy of the picture
 uniform float warp;         // 0 none, 1 twirl, 2 spherize (pinch below 0), 3 ripple, 4 zigzag, 5 polar, 6 kaleidoscope, 7 shear, 8 droste, 9 tiles, 10 flag
 uniform float warpAmount;   // how strong; every warp moves slowly with time
+uniform float motion;       // 0 none, 1 shimmer, 2 pulse, 3 wave, 4 drift, 5 scan, 6 sparkle, 7 ripple
+uniform float motionAmount; // 0..1, how strongly the characters move
 
 vec2 warped(vec2 uv){
   if(warp<0.5) return uv;
@@ -34,6 +36,34 @@ vec2 warped(vec2 uv){
   else if(warp<9.5){float n=floor(2.0+w*3.0); return fract(uv*n+t*0.005);}
   else {c.y+=sin(c.x*8.0+t*1.5)*0.035*w; c.x+=sin(c.y*6.0+t)*0.01*w; return c/k+0.5;}
   return vec2(cos(a),sin(a))*r/k+0.5;
+}
+
+// Motion changes the characters, never the picture: no UV bending, no warped faces.
+float motionLevel(vec2 uv, float l){
+  float a=clamp(motionAmount,0.0,1.0), t=u_time;
+  if(motion<0.5||a<=0.0) return l;
+  if(motion<1.5){                                         // shimmer: each character twinkles on its own
+    float id=dot(floor(uv*u_grid),vec2(12.9898,78.233));
+    float tw=0.5+0.5*sin(t*2.2+id);
+    return l*(1.0-a*0.35+a*0.7*tw);
+  }
+  if(motion<2.5) return l*(1.0+a*0.18*sin(t*1.3));        // pulse: the whole picture breathes
+  if(motion<3.5) return l*(1.0+a*0.22*sin((uv.x+uv.y*0.7)*6.0-t*1.6)); // wave
+  if(motion<4.5){                                         // drift: a soft band travels across the characters
+    float p=fract(uv.x*2.5-t*0.12);
+    return l*(0.85+a*0.35*smoothstep(0.0,0.15,p)*smoothstep(0.5,0.15,p));
+  }
+  if(motion<5.5){                                         // scan: a bright line sweeps down
+    float band=exp(-pow((fract(uv.y-t*0.07)-0.5)*7.0,2.0));
+    return min(1.0,l+band*a*0.45);
+  }
+  if(motion<6.5){                                         // sparkle: a few cells flash
+    float bucket=floor(t*3.0);
+    float h=fract(sin(dot(floor(uv*u_grid)+bucket,vec2(127.1,311.7)))*43758.5453);
+    return min(1.0,l+step(0.965,h)*a*0.9);
+  }
+  float r=length((uv-0.5)*vec2(u_aspect,1.0));            // ripple: brightness only, no bending
+  return l*(1.0+a*0.18*sin(r*16.0-t*2.2));
 }
 
 vec4 cell(vec2 uv){
@@ -69,6 +99,7 @@ vec4 cell(vec2 uv){
   l=pow(clamp((l-0.5)*contrast+0.5+brightness+near*0.12+glow*0.5,0.0,1.0),gamma);
   if(invert>0.5) l=1.0-l;
   l*=dim;
+  l=clamp(motionLevel(uv,l),0.0,1.0);
   if(l<threshold) return vec4(0.0);
   // Own colours: saturated pixels keep their hue, dark or grey ones take the tint (so an inverted
   // picture's dark subject still glows); vivid lifts them all towards full brightness.

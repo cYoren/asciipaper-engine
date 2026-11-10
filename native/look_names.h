@@ -2,5 +2,5 @@
 #pragma once
 static const char *const SHAPES[] = {"glyph", "pixel", "mosaic", "dots", "led", "lego", "cross", "diamond", "lines", "diagonal", "voxel", "disco", "cmyk", "truchet", "hex", "crosshatch", "stitch", "stipple", NULL};
 static const char *const DITHERS[] = {"none", "bayer2", "bayer4", "bayer8", "bayer16", "halftone", "radial", "linesH", "linesV", "linesD", "whiteNoise", "blueNoise", NULL};
-static const char *const FX[] = {"vignette", "scanlines", "crt", "rgbSplit", "grain", "glitch", "bloom", "dust", "saturation", "hue", "flicker", "posterize", "edgeGlow", "vhs", "pixelSort", "tiltShift", "emboss", "mirror", "lightLeak", NULL};
+static const char *const FX[] = {"vignette", "scanlines", "rgbSplit", "grain", "glitch", "bloom", "dust", "saturation", "hue", "flicker", "posterize", "edgeGlow", "vhs", "pixelSort", "tiltShift", "emboss", "mirror", "lightLeak", NULL};
 static const char *const INTERACTIONS[] = {"none", "glow", "magnify", "repel", "attract", "swirl", "ripple", NULL};
