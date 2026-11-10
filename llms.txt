@@ -12,6 +12,8 @@
 - Video/GIF: add `--record 30` and pipe raw BGRA frames into ffmpeg.
 - Picture, GIF or video as characters: `python3 tools/import_media.py photo.jpg -o out/` writes
   `out/photo.json`, the media and its frames; then render the spec like any other.
+- Big text as a wallpaper: `python3 tools/text_wallpaper.py "ASCII PAPER" -o out/` (draws the text
+  with ffmpeg, then ports it exactly like a picture: same styles, same look, same exports).
 - Browser: `python3 -m http.server -d wallpapers 8000`, then `/run.html?spec=specs/plasma.json`;
   `/embed.html` shows a scene inside a page section.
 - Tests: `make test`.

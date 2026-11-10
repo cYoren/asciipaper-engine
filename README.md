@@ -29,6 +29,7 @@ screen of characters costs about as much as one full-screen quad.
 | video or GIF | `--record 30 --warmup 2 \| ffmpeg -f rawvideo -pix_fmt bgra -s 1920x1080 -r 30 -i - out.mp4` |
 | background inside a web page | a `<canvas>` plus `asciipaper.ascii({canvas, glsl})` (see `wallpapers/embed.html`) |
 | a picture, GIF or video as characters | `python3 tools/import_media.py photo.jpg -o out/` → a spec, its media and its frames |
+| big text: a word, a name, a few lines | `python3 tools/text_wallpaper.py "ASCII PAPER" -o out/` |
 | a shareable wallpaper file | the same JSON spec, on any platform |
 
 ## For agents

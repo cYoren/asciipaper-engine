@@ -124,45 +124,64 @@ def main():
     parser.add_argument("--json", action="store_true", help="print the spec instead of only the paths")
     args = parser.parse_args()
 
-    ramps = charset(args.charset)
-
-    url = re.match(r"https?://", args.source)
-    source = download(args.source) if url else Path(args.source).expanduser()
-    if not url and not source.is_file():
-        fail(f"no such file: {args.source}")
-
-    out = Path(args.out).expanduser()
-    out.mkdir(parents=True, exist_ok=True)
-    name = args.name or re.sub(r"[^a-z0-9]+", "-", source.stem.lower()).strip("-") or "ported"
-    media = out / (name + (source.suffix.lower() or ".bin"))
-    if source.resolve() != media.resolve():
-        shutil.copyfile(source, media)
-    if url:
-        shutil.rmtree(source.parent, ignore_errors=True)
-
-    width, height, fps, count = media_info(media)
-    data, (w, h, frames, fps) = decode(media, width, height, args.fps or fps, count,
-                                           args.frame_width, args.max_frames)
-    (out / (media.name + ".frames")).write_bytes(data)
-
-    uniforms, background = look(data[20:])
-    spec = {"title": name.replace("-", " ").capitalize(), "media": media.name, "charset": ramps,
-            "cell": args.cell, "aspect": args.aspect, "weight": 700, "fill": 0.25,
-            "background": background, "uniforms": uniforms}
-    spec_path = out / (name + ".json")
-    spec_path.write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-    size = f"{w}x{h}, {frames} frame{'s' if frames != 1 else ''}" + (f", {fps:g} fps" if fps else ", still")
-    print(f"{spec_path}   ({size})", file=sys.stderr)
-    rel = os.path.relpath(spec_path.resolve(), (ROOT / "wallpapers").resolve())
+    spec_path, media, frames, info = port(args.source, args.out, name=args.name, charset_name=args.charset,
+                                          cell=args.cell, aspect=args.aspect, frame_width=args.frame_width,
+                                          max_frames=args.max_frames, fps=args.fps)
     if args.json:
         print(spec_path.read_text(), end="")
     else:
-        print(f"{spec_path}\n{media}\n{media}.frames")
-        print(f"\nsnapshot:  ./native/asciipaper-engine --spec {spec_path} --lib wallpapers/lib "
-              f"--snapshot {out / (name + '.png')} --size 1920x1080 --seconds 3", file=sys.stderr)
-        print(f"in a page: python3 -m http.server -d {ROOT} 8000  →  http://localhost:8000/wallpapers/run.html"
-              f"?spec={rel}", file=sys.stderr)
+        print(f"{spec_path}\n{media}\n{frames}")
+        print(advice(spec_path, info), file=sys.stderr)
+
+
+def port(source, out=".", name=None, charset_name="detailed", cell=7, aspect=0.55,
+         frame_width=FRAME_WIDTH, max_frames=MAX_FRAMES, fps=None, title=None):
+    """Decode a picture, GIF, video or URL and write <name>.json, the media and its frames.
+
+    Returns (spec_path, media_path, frames_path, (width, height, frames, fps)). Other tools use this
+    too (tools/text_wallpaper.py), so a ported wallpaper is always built the same way.
+    """
+    ramps = charset(charset_name)
+    source = str(source)
+    url = re.match(r"https?://", source)
+    path = download(source) if url else Path(source).expanduser()
+    if not url and not path.is_file():
+        fail(f"no such file: {source}")
+
+    out = Path(out).expanduser()
+    out.mkdir(parents=True, exist_ok=True)
+    name = name or re.sub(r"[^a-z0-9]+", "-", path.stem.lower()).strip("-") or "ported"
+    media = out / (name + (path.suffix.lower() or ".bin"))
+    if path.resolve() != media.resolve():
+        shutil.copyfile(path, media)
+    if url:
+        shutil.rmtree(path.parent, ignore_errors=True)
+
+    width, height, clip_fps, count = media_info(media)
+    data, (w, h, frames, fps) = decode(media, width, height, fps or clip_fps, count, frame_width, max_frames)
+    frames_path = out / (media.name + ".frames")
+    frames_path.write_bytes(data)
+
+    uniforms, background = look(data[20:])
+    spec = {"title": title or name.replace("-", " ").capitalize(), "media": media.name, "charset": ramps,
+            "cell": cell, "aspect": aspect, "weight": 700, "fill": 0.25,
+            "background": background, "uniforms": uniforms}
+    spec_path = out / (name + ".json")
+    spec_path.write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"{spec_path}\t{w}x{h}, {frames} frame{'s' if frames != 1 else ''}"
+          f"{f', {fps:g} fps' if fps else ', still'}", file=sys.stderr)
+    return spec_path, media, frames_path, (w, h, frames, fps)
+
+
+def advice(spec_path, info=None):
+    """The two commands that come next, printed for a person or an agent."""
+    spec_path = Path(spec_path)
+    out = spec_path.parent
+    rel = os.path.relpath(spec_path.resolve(), (ROOT / "wallpapers").resolve())
+    return ("snapshot:  ./native/asciipaper-engine --spec " + str(spec_path) + " --lib wallpapers/lib "
+            f"--snapshot {out / (spec_path.stem + '.png')} --size 1920x1080 --seconds 3\n"
+            f"in a page: python3 -m http.server -d {ROOT} 8000  ->  "
+            f"http://localhost:8000/wallpapers/run.html?spec={rel}")
 
 
 if __name__ == "__main__":
