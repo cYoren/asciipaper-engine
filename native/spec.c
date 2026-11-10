@@ -94,7 +94,7 @@ static void map_frames(struct spec *s, const char *path) {
     int fd = open(path, O_RDONLY | O_CLOEXEC);
     struct stat st;
     if (fd < 0 || fstat(fd, &st) < 0 || st.st_size < 20) {
-        fprintf(stderr, "asciipaper-engine: no frames at %s; run: asciipaper import <media>\n", path);
+        fprintf(stderr, "asciipaper-engine: no frames at %s; run: python3 tools/import_media.py <media>\n", path);
         if (fd >= 0) close(fd);
         return;
     }
@@ -197,12 +197,13 @@ const struct preset *spec_load(const char *path, const char *lib, char *shader_f
     s->preset.dither = named(j, "dither", DITHERS);
     s->preset.pace = fmin(2, fmax(.05, json_number(j, "pace", 1)));
     const struct json *interaction = json_get(j, "interaction");   // "swirl" or {"mode": "swirl", "strength": 1, "radius": .25}
+    int default_interaction = media ? 0 : 3;                      // pictures start still: faces should not bend
     if (interaction && interaction->type == JSON_OBJECT) {
-        s->preset.interact = named(interaction, "mode", INTERACTIONS);
+        s->preset.interact = json_get(interaction, "mode") ? named(interaction, "mode", INTERACTIONS) : default_interaction;
         s->preset.interact_strength = json_number(interaction, "strength", 1);
         s->preset.interact_radius = json_number(interaction, "radius", .25);
     } else {
-        s->preset.interact = named(j, "interaction", INTERACTIONS);
+        s->preset.interact = interaction ? named(j, "interaction", INTERACTIONS) : default_interaction;
         s->preset.interact_strength = 1; s->preset.interact_radius = .25;
     }
     const struct json *palette = json_get(j, "palette");

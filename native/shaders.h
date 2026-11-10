@@ -3,8 +3,8 @@
 static const char HEADER[] =
     "precision highp float;\n"
     "varying vec2 v_uv;\n"
-    "uniform float u_time, u_aspect, u_down, u_strength, u_idle;\n"
-    "uniform vec2 u_grid, u_size, u_pointer, u_velocity;\n"
+    "uniform float u_time, u_aspect, u_down, u_strength, u_idle, u_audio;\n"
+    "uniform vec2 u_grid, u_size, u_pointer, u_velocity, u_tilt;\n"
     "uniform vec3 u_clicks[8];\n"
     "uniform sampler2D u_data;\n";
 static const char QUAD[] =
@@ -29,7 +29,8 @@ static const char CELL_MAIN[] =
     "if(m<7.5)return fract(a.y/4.0);if(m<8.5)return fract(a.x/4.0);if(m<9.5)return fract((a.x+a.y)/4.0);\n"
     "if(m<10.5)return fract(sin(dot(floor(a),vec2(12.9898,78.233)))*43758.5453);\n"
     "return fract(52.9829189*fract(dot(floor(a),vec2(0.06711056,0.00583715))));}\n"
-    "void main(){vec4 c=cell(ap_interact(vec2(v_uv.x,1.0-v_uv.y)));float l=clamp(c.a,0.0,1.0);vec3 rgb=clamp(c.rgb,0.0,1.0);\n"
+    "void main(){vec2 uv=vec2(v_uv.x,1.0-v_uv.y);uv=clamp((uv-0.5)/(1.0+u_audio*0.08)+0.5+u_tilt*0.06,0.0,1.0);\n"
+    "vec4 c=cell(ap_interact(uv));float l=clamp(c.a*(1.0+u_audio*0.5),0.0,1.0);vec3 rgb=clamp(c.rgb*(1.0+u_audio*0.5),0.0,1.0);\n"
     "if(u_interact>0.5&&u_interact<1.5){l=clamp(l+ap_reach*0.45,0.0,1.0);rgb=clamp(rgb+ap_reach*0.25,0.0,1.0);}\n"
     "if(u_dither>0.5){float t=ap_dither(gl_FragCoord.xy)-0.5;if(l>0.0)l=clamp(l+t/max(u_glyphs-1.0,1.0),0.0,1.0);\n"
     "if(u_paletteSize>0.5)rgb=clamp(rgb+t*pow(max(u_paletteSize-1.0,1.0),-0.333),0.0,1.0);}\n"
@@ -82,7 +83,6 @@ static const char GLYPHS[] =
     "if(fxE.y>0.0){p.x=0.5-abs(p.x-0.5);if(fxE.y>0.5)p.y=0.5-abs(p.y-0.5);}\n"
     "float roll=fxD.y>0.0?smoothstep(0.05,0.0,abs(p.y-fract(1.0-time*0.06))):0.0;\n"
     "if(fxD.y>0.0)p.x+=(hash(vec2(floor(p.y*grid.y*2.0),floor(time*8.0)))-0.5)*0.012*fxD.y*(0.2+roll*5.0);\n"
-    "if(fxA.z>0.0){vec2 o=p-0.5;p=0.5+o*(1.0+fxA.z*0.35*dot(o,o)*4.0);if(p.x<0.0||p.x>1.0||p.y<0.0||p.y>1.0){gl_FragColor=vec4(0.0,0.0,0.0,1.0);return;}}\n"
     "if(fxB.y>0.0){float t=floor(time*9.0),band=floor(p.y*18.0+hash(vec2(t,3.0))*6.0);if(hash(vec2(band,t))<fxB.y*0.35)p.x=fract(p.x+(hash(vec2(t,band))-0.5)*0.12*fxB.y);}\n"
     "vec3 col=draw(p);\n"
     "float split=fxA.w+fxD.y*0.6;\n"

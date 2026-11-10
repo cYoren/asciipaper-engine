@@ -28,6 +28,7 @@ screen of characters costs about as much as one full-screen quad.
 | still image, any resolution | `./native/asciipaper-engine --spec wallpapers/specs/plasma.json --lib wallpapers/lib --snapshot plasma.png --size 3840x2160 --seconds 4` |
 | video or GIF | `--record 30 --warmup 2 \| ffmpeg -f rawvideo -pix_fmt bgra -s 1920x1080 -r 30 -i - out.mp4` |
 | background inside a web page | a `<canvas>` plus `asciipaper.ascii({canvas, glsl})` (see `wallpapers/embed.html`) |
+| a picture, GIF or video as characters | `python3 tools/import_media.py photo.jpg -o out/` → a spec, its media and its frames |
 | a shareable wallpaper file | the same JSON spec, on any platform |
 
 ## For agents
@@ -83,8 +84,8 @@ Read next: the spec and uniform reference below, `llms.txt`, and the two example
 ### What the app uses
 
 [ASCII Paper](https://github.com/cYoren/asciipaper-pro) is the app built on this engine.
-It does not fork the renderer: it pins this repository at a commit and vendors these
-files, with the changes listed below.
+It does not fork the renderer either: it pins this repository at a commit and vendors these
+files unchanged.
 
 | Platform | Renderer | File |
 |---|---|---|
@@ -94,20 +95,15 @@ files, with the changes listed below.
 | Android | WebGL runtime in a WebView live wallpaper | `wallpapers/lib/asciipaper.js` |
 | Web, Studio preview, exports | WebGL runtime in a browser | `wallpapers/lib/asciipaper.js` |
 
-The app adds the Studio, Discover packs, the community and the store builds. Where it
-needs different behaviour it carries a patch instead of a fork:
+The app adds the Studio, Discover packs, the community and the store builds. It changes
+nothing in the renderer:
 
-| Shared file | What the app changes |
-|---|---|
-| `native/spec.c`, `native/presets.c` | pictures start still; scenes push away from the pointer |
-| `wallpapers/lib/asciipaper.js` | audio and tilt reactivity, interaction defaults, CJK glyph sizing |
-| `wallpapers/lib/media.glsl` | motion effects: shimmer, pulse, wave, drift, scan, sparkle, ripple |
-| `wallpapers/lib/shaders/header.glsl`, `cell_main.glsl` | the audio and tilt uniforms |
-| `wallpapers/lib/shaders/glyphs.glsl` | the `crt` effect removed |
-
-Everything else in `native/` and `wallpapers/lib/` is this repository, byte for byte.
-The app pins the commit in `vendor/VENDOR.json` and its build fails if a shared file
-drifts from this repository by anything other than the changes above.
+Nothing in it. The renderer, the spec loader, the look catalog and the shaders here are the
+same files the app ships, byte for byte: the app vendors this repository at a pinned commit
+(`vendor/VENDOR.json`) and its build fails if any shared file drifts from here. Everything the
+app can render, this can render, from the same JSON spec and the same `asciipaper:v1:` look
+code. What the app adds is its own scenes and packs, the Studio, the store builds and the
+community, not rendering rules.
 
 ## Build
 
@@ -127,7 +123,9 @@ python3 -m http.server -d wallpapers 8000                # then /run.html?spec=s
 ```
 
 Useful flags: `--spec FILE`, `--lib DIR` (where `media.glsl` lives), `--snapshot OUT.png`,
-`--size WxH`, `--seconds S`, `--pointer X,Y`, `--record FPS`, `--warmup S`, `--headless`.
+`--size WxH`, `--seconds S`, `--pointer X,Y`, `--audio 0..1`, `--tilt X,Y`, `--record FPS`,
+`--warmup S`, `--headless`. `--pointer`, `--audio` and `--tilt` fill the host-fed uniforms,
+so a shader that reacts to them renders the same way offscreen every time.
 
 ## A wallpaper is a JSON file plus a shader
 
@@ -145,7 +143,7 @@ Useful flags: `--spec FILE`, `--lib DIR` (where `media.glsl` lives), `--snapshot
 
 Everything a look can have is a key in the same file: `shape` (pixels, dots, LEGO, CMYK,
 truchet, hex…), `dither` (ordered patterns), `palette` (nearest-colour inks), `effects`
-(`{"crt": 1}`, scanlines, bloom, glitch, grain, posterize, vhs…), `interaction` (`glow`,
+(`{"scanlines": 1}`, bloom, glitch, grain, posterize, vhs…), `interaction` (`glow`,
 `magnify`, `repel`, `attract`, `swirl`, `ripple`), `speed`, `pace`, `weight`, `maxCells`,
 `font`, `color`. The names and ranges are all in `wallpapers/lib/looks.json`.
 

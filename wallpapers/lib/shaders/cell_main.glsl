@@ -17,7 +17,8 @@ if(m<5.5)return clamp(length(fract(a/4.0)-0.5)*1.41,0.0,1.0);if(m<6.5)return fra
 if(m<7.5)return fract(a.y/4.0);if(m<8.5)return fract(a.x/4.0);if(m<9.5)return fract((a.x+a.y)/4.0);
 if(m<10.5)return fract(sin(dot(floor(a),vec2(12.9898,78.233)))*43758.5453);
 return fract(52.9829189*fract(dot(floor(a),vec2(0.06711056,0.00583715))));}
-void main(){vec4 c=cell(ap_interact(vec2(v_uv.x,1.0-v_uv.y)));float l=clamp(c.a,0.0,1.0);vec3 rgb=clamp(c.rgb,0.0,1.0);
+void main(){vec2 uv=vec2(v_uv.x,1.0-v_uv.y);uv=clamp((uv-0.5)/(1.0+u_audio*0.08)+0.5+u_tilt*0.06,0.0,1.0);
+vec4 c=cell(ap_interact(uv));float l=clamp(c.a*(1.0+u_audio*0.5),0.0,1.0);vec3 rgb=clamp(c.rgb*(1.0+u_audio*0.5),0.0,1.0);
 if(u_interact>0.5&&u_interact<1.5){l=clamp(l+ap_reach*0.45,0.0,1.0);rgb=clamp(rgb+ap_reach*0.25,0.0,1.0);}
 if(u_dither>0.5){float t=ap_dither(gl_FragCoord.xy)-0.5;if(l>0.0)l=clamp(l+t/max(u_glyphs-1.0,1.0),0.0,1.0);
 if(u_paletteSize>0.5)rgb=clamp(rgb+t*pow(max(u_paletteSize-1.0,1.0),-0.333),0.0,1.0);}

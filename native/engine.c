@@ -5,7 +5,7 @@
 //
 // usage: asciipaper-engine PRESET
 //        asciipaper-engine --spec WALLPAPER.json --lib DIR   (DIR holds media.glsl; see spec.c)
-//        ... --snapshot OUT.png [--size 1920x1080] [--seconds 3] [--pointer X,Y]
+//        ... --snapshot OUT.png [--size 1920x1080] [--seconds 3] [--pointer X,Y] [--audio A] [--tilt X,Y]
 //            render offscreen, without a compositor: previews, thumbnails and tests.
 //        ... --snapshot - --record FPS [--warmup S] ...
 //            write --seconds of raw RGBA frames to stdout instead (asciipaper render pipes them to ffmpeg).
@@ -92,6 +92,8 @@ static const struct preset *pending;   // a reloaded spec waiting for a GL conte
 static const char *snapshot;           // render once to this PNG instead of running
 
 static struct { double fps, idle_fps, quality, pointer, speed; int clicks; } options = {24, 12, 1, 1, 1, 0};   // speed: calm < 1 < lively
+// Host-fed reactivity (u_audio, u_tilt): a host app posts these while it draws; a render asks for them.
+static struct { float audio, tilt_x, tilt_y; } reactive;
 static char engine_json[4096];
 
 static double now_seconds(void) {
@@ -407,6 +409,8 @@ static void draw(struct output *o, double now) {
     glUniform1f(glGetUniformLocation(cell_prog, "u_down"), p->down);
     glUniform1f(glGetUniformLocation(cell_prog, "u_strength"), options.pointer);
     glUniform1f(glGetUniformLocation(cell_prog, "u_idle"), now - p->moved);
+    glUniform1f(glGetUniformLocation(cell_prog, "u_audio"), reactive.audio);
+    glUniform2f(glGetUniformLocation(cell_prog, "u_tilt"), reactive.tilt_x, reactive.tilt_y);
     glUniform3fv(glGetUniformLocation(cell_prog, "u_clicks"), MAX_CLICKS, clicks);
     glBindFramebuffer(GL_FRAMEBUFFER, o->fbo);
     glViewport(0, 0, s->cols, s->rows);
@@ -693,6 +697,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &snap_w, &snap_h);
         else if (!strcmp(argv[i], "--seconds") && i + 1 < argc) snap_seconds = atof(argv[++i]);
         else if (!strcmp(argv[i], "--pointer") && i + 1 < argc) sscanf(argv[++i], "%f,%f", &snap_x, &snap_y);
+        else if (!strcmp(argv[i], "--audio") && i + 1 < argc) reactive.audio = fmin(1, fmax(0, atof(argv[++i])));
+        else if (!strcmp(argv[i], "--tilt") && i + 1 < argc) sscanf(argv[++i], "%f,%f", &reactive.tilt_x, &reactive.tilt_y);
         else if (!strcmp(argv[i], "--record") && i + 1 < argc) record_fps = fmin(120, fmax(1, atof(argv[++i])));
         else if (!strcmp(argv[i], "--warmup") && i + 1 < argc) warmup = fmax(0, atof(argv[++i]));
         else if (!strcmp(argv[i], "--lib") && i + 1 < argc) lib_dir = argv[++i];
