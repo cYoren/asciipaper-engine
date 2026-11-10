@@ -9,6 +9,13 @@
   const options = Object.assign({fps: 24, idleFps: 12, quality: 1, pointer: 1, speed: .7, clicks: false, paused: false},
                                 window.__asciipaperOptions);
   const pointer = {x: .5, y: .5, vx: 0, vy: 0, down: false, inside: false, moved: -1e9, clicks: []};
+  // Host-fed reactivity (audio level, tilt): a host page or app posts {type:'paper-reactive'}; with
+  // no host both stay 0 and shaders that read them render as if the feature were off.
+  const reactive = {x: 0, y: 0, audio: 0};
+  addEventListener('message', e => {
+    if (e.source !== parent || e.data?.type !== 'paper-reactive') return;
+    for (const k of ['x', 'y', 'audio']) reactive[k] = Math.max(k === 'audio' ? 0 : -2, Math.min(k === 'audio' ? 1 : 2, Number(e.data[k]) || 0));
+  });
 
   // ---- Frame pacing. Pages keep calling requestAnimationFrame as usual; callbacks run at `fps`
   // while the pointer is active, `idleFps` otherwise, and not at all while paused. When idle we wait
@@ -99,8 +106,8 @@
   // sets uniforms, so a full screen of characters costs about as much as one quad.
   const HEADER = `precision highp float;
 varying vec2 v_uv;
-uniform float u_time, u_aspect, u_down, u_strength, u_idle;
-uniform vec2 u_grid, u_size, u_pointer, u_velocity;
+uniform float u_time, u_aspect, u_down, u_strength, u_idle, u_audio;
+uniform vec2 u_grid, u_size, u_pointer, u_velocity, u_tilt;
 uniform vec3 u_clicks[8];
 uniform sampler2D u_data;
 `;
@@ -125,7 +132,8 @@ if(m<5.5)return clamp(length(fract(a/4.0)-0.5)*1.41,0.0,1.0);if(m<6.5)return fra
 if(m<7.5)return fract(a.y/4.0);if(m<8.5)return fract(a.x/4.0);if(m<9.5)return fract((a.x+a.y)/4.0);
 if(m<10.5)return fract(sin(dot(floor(a),vec2(12.9898,78.233)))*43758.5453);
 return fract(52.9829189*fract(dot(floor(a),vec2(0.06711056,0.00583715))));}
-void main(){vec4 c=cell(ap_interact(vec2(v_uv.x,1.0-v_uv.y)));float l=clamp(c.a,0.0,1.0);vec3 rgb=clamp(c.rgb,0.0,1.0);
+void main(){vec2 uv=vec2(v_uv.x,1.0-v_uv.y);uv=clamp((uv-0.5)/(1.0+u_audio*0.08)+0.5+u_tilt*0.06,0.0,1.0);
+vec4 c=cell(ap_interact(uv));float l=clamp(c.a*(1.0+u_audio*0.5),0.0,1.0);vec3 rgb=clamp(c.rgb*(1.0+u_audio*0.5),0.0,1.0);
 if(u_interact>0.5&&u_interact<1.5){l=clamp(l+ap_reach*0.45,0.0,1.0);rgb=clamp(rgb+ap_reach*0.25,0.0,1.0);}
 if(u_dither>0.5){float t=ap_dither(gl_FragCoord.xy)-0.5;if(l>0.0)l=clamp(l+t/max(u_glyphs-1.0,1.0),0.0,1.0);
 if(u_paletteSize>0.5)rgb=clamp(rgb+t*pow(max(u_paletteSize-1.0,1.0),-0.333),0.0,1.0);}
@@ -179,7 +187,6 @@ void main(){vec2 p=v_uv;
 if(fxE.y>0.0){p.x=0.5-abs(p.x-0.5);if(fxE.y>0.5)p.y=0.5-abs(p.y-0.5);}
 float roll=fxD.y>0.0?smoothstep(0.05,0.0,abs(p.y-fract(1.0-time*0.06))):0.0;
 if(fxD.y>0.0)p.x+=(hash(vec2(floor(p.y*grid.y*2.0),floor(time*8.0)))-0.5)*0.012*fxD.y*(0.2+roll*5.0);
-if(fxA.z>0.0){vec2 o=p-0.5;p=0.5+o*(1.0+fxA.z*0.35*dot(o,o)*4.0);if(p.x<0.0||p.x>1.0||p.y<0.0||p.y>1.0){gl_FragColor=vec4(0.0,0.0,0.0,1.0);return;}}
 if(fxB.y>0.0){float t=floor(time*9.0),band=floor(p.y*18.0+hash(vec2(t,3.0))*6.0);if(hash(vec2(band,t))<fxB.y*0.35)p.x=fract(p.x+(hash(vec2(t,band))-0.5)*0.12*fxB.y);}
 vec3 col=draw(p);
 float split=fxA.w+fxD.y*0.6;
@@ -211,7 +218,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
   const SHAPES = ['glyph', 'pixel', 'mosaic', 'dots', 'led', 'lego', 'cross', 'diamond', 'lines', 'diagonal', 'voxel', 'disco', 'cmyk', 'truchet', 'hex', 'crosshatch', 'stitch', 'stipple'];
   const DITHERS = ['none', 'bayer2', 'bayer4', 'bayer8', 'bayer16', 'halftone', 'radial', 'linesH', 'linesV', 'linesD', 'whiteNoise', 'blueNoise'];
   const INTERACTIONS = ['none', 'glow', 'magnify', 'repel', 'attract', 'swirl', 'ripple'];
-  const FX = ['vignette', 'scanlines', 'crt', 'rgbSplit', 'grain', 'glitch', 'bloom', 'dust', 'saturation', 'hue', 'flicker', 'posterize', 'edgeGlow', 'vhs', 'pixelSort', 'tiltShift', 'emboss', 'mirror', 'lightLeak', ''];
+  const FX = ['vignette', 'scanlines', '', 'rgbSplit', 'grain', 'glitch', 'bloom', 'dust', 'saturation', 'hue', 'flicker', 'posterize', 'edgeGlow', 'vhs', 'pixelSort', 'tiltShift', 'emboss', 'mirror', 'lightLeak', ''];
   const named = (v, names) => typeof v === 'number' ? v : Math.max(0, names.indexOf(v));
   const rgb = v => (v.match(/[0-9a-f]{2}/gi) || ['00', '00', '00']).map(h => parseInt(h, 16) / 255);
   let lastScene = null;
@@ -258,7 +265,8 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
     const palette = (cfg.palette || []).slice(0, 16).map(rgb);
     // interaction: how the wallpaper answers the pointer, on top of whatever the scene does itself
     const interaction = typeof cfg.interaction === 'string' ? {mode: cfg.interaction} : cfg.interaction || {};
-    gl.uniform1f(cellProg.u('u_interact'), named(interaction.mode || 0, INTERACTIONS));
+    // scenes lean towards the pointer, pictures stay still (bending a face is never a good default)
+    gl.uniform1f(cellProg.u('u_interact'), named(interaction.mode ?? (cfg.media ? 'none' : 'repel'), INTERACTIONS));
     gl.uniform1f(cellProg.u('u_interactStrength'), interaction.strength ?? 1); gl.uniform1f(cellProg.u('u_interactRadius'), interaction.radius ?? .25);
     gl.uniform1f(cellProg.u('u_dither'), named(cfg.dither || 0, DITHERS)); gl.uniform1f(cellProg.u('u_paletteSize'), palette.length);
     if (palette.length) gl.uniform3fv(cellProg.u('u_palette'), palette.flat());
@@ -357,6 +365,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
       shown.forEach((c, i) => clicks.set([c.x, c.y, (now - c.time) / 1000], i * 3));
       for (let i = shown.length; i < 8; i++) clicks[i * 3 + 2] = 1e4;
       gl.uniform1f(cellProg.u('u_time'), scene.time);
+      gl.uniform2f(cellProg.u('u_tilt'), reactive.x, reactive.y); gl.uniform1f(cellProg.u('u_audio'), reactive.audio);
       gl.uniform2f(cellProg.u('u_pointer'), pointer.x, pointer.y); gl.uniform2f(cellProg.u('u_velocity'), pointer.vx, pointer.vy);
       gl.uniform1f(cellProg.u('u_down'), pointer.down ? 1 : 0); gl.uniform1f(cellProg.u('u_strength'), options.pointer);
       gl.uniform1f(cellProg.u('u_idle'), (now - pointer.moved) / 1000); gl.uniform3fv(cellProg.u('u_clicks'), clicks);
@@ -385,7 +394,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
     const uniforms = {};
     for (const [k, v] of Object.entries(s.uniforms || {})) uniforms[k] = typeof v === 'boolean' ? +v : color(v);
     live = {uniforms, look: JSON.stringify(LOOK.map(k => s[k])), shader: s.glsl};
-    const config = {glsl: s.glsl};
+    const config = {glsl: s.glsl, media: !!s.media};
     for (const k of LOOK) if (s[k] !== undefined) config[k] = s[k];
     const el = s.media && document.getElementById('asciipaper-media');
     if (el && 'playbackRate' in el) { el.playbackRate = uniforms.speed || 1; el.play?.().catch(() => {}); }
