@@ -6,7 +6,13 @@ all:
 test:
 	python3 -m unittest discover -s tests -v
 
+install:
+	$(MAKE) -C native install
+
+uninstall:
+	$(MAKE) -C native uninstall
+
 clean:
 	$(MAKE) -C native clean
 
-.PHONY: all test clean
+.PHONY: all test install uninstall clean
