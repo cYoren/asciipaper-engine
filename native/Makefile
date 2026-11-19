@@ -27,3 +27,14 @@ check-runtime:
 
 clean:
 	rm -f asciipaper-engine *-client-protocol.h *-protocol.c
+
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
+
+install: asciipaper-engine
+	install -Dm755 asciipaper-engine $(DESTDIR)$(BINDIR)/asciipaper-engine
+
+uninstall:
+	rm -f $(DESTDIR)$(BINDIR)/asciipaper-engine
+
+.PHONY: install uninstall
