@@ -111,6 +111,7 @@ community, not rendering rules.
 ```sh
 make                  # the native engine, into native/asciipaper-engine
 make test             # spec + shader checks (needs python3 and glslangValidator)
+make install          # into $(PREFIX)/bin, default /usr/local; DESTDIR works for packaging
 ```
 
 Build deps: a C compiler, `pkg-config`, `libwayland-client`, `libwayland-egl`, `libegl`,
