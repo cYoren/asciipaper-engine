@@ -176,7 +176,7 @@ const struct preset *spec_load(const char *path, const char *lib, char *shader_f
         .charset = strdup(json_string(j, "charset", " .:-=+*#%@")),
         .font = json_string(j, "font", NULL) ? strdup(json_string(j, "font", NULL)) : NULL,
         .background = strdup(hex_color(background, rgb) ? background : "#000000"),
-        .cell = fmax(2, json_number(j, "cell", 8)), .aspect = fmax(.1, json_number(j, "aspect", .55)),
+        .cell = fmax(1, json_number(j, "cell", 8)), .aspect = fmax(.1, json_number(j, "aspect", .55)),
         .max_cells = fmax(100, json_number(j, "maxCells", 40000)),
         .time = json_number(j, "time", 0), .period = json_number(j, "period", 0),
         .fill = fmin(1, fmax(0, json_number(j, "fill", 0))),
@@ -196,15 +196,15 @@ const struct preset *spec_load(const char *path, const char *lib, char *shader_f
     }
     s->preset.dither = named(j, "dither", DITHERS);
     s->preset.pace = fmin(2, fmax(.05, json_number(j, "pace", 1)));
-    const struct json *interaction = json_get(j, "interaction");   // "swirl" or {"mode": "swirl", "strength": 1, "radius": .25}
+    const struct json *interaction = json_get(j, "interaction");   // "swirl" or {"mode": "swirl", "strength": .5, "radius": .12}
     int default_interaction = media ? 0 : 3;                      // pictures start still: faces should not bend
     if (interaction && interaction->type == JSON_OBJECT) {
         s->preset.interact = json_get(interaction, "mode") ? named(interaction, "mode", INTERACTIONS) : default_interaction;
-        s->preset.interact_strength = json_number(interaction, "strength", 1);
-        s->preset.interact_radius = json_number(interaction, "radius", .25);
+        s->preset.interact_strength = json_number(interaction, "strength", .5);
+        s->preset.interact_radius = json_number(interaction, "radius", .12);
     } else {
         s->preset.interact = interaction ? named(j, "interaction", INTERACTIONS) : default_interaction;
-        s->preset.interact_strength = 1; s->preset.interact_radius = .25;
+        s->preset.interact_strength = .5; s->preset.interact_radius = .12;
     }
     const struct json *palette = json_get(j, "palette");
     for (int i = 0; palette && palette->type == JSON_ARRAY && i < palette->count && s->preset.npalette < 16; i++)
