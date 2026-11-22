@@ -121,6 +121,9 @@ asciipaper.ascii({
   resize(scene) {
     cols = scene.cols; rows = scene.rows; N = cols * rows;
     [vx, vy, vx0, vy0, d, d0, p, div] = Array.from({ length: 8 }, () => new Float32Array(N));
+    // Seed the field, so the first frame is already a picture: the ambient drift alone needs ten
+    // seconds to become visible, which is an empty screen when this runs as a screen saver.
+    for (let s = 0; s < 3; s++) splat(cols * (.28 + .22 * s), rows * (.3 + .2 * s), (s - 1) * .4, (1 - s) * .3, .9, Math.max(4, cols * .06));
   },
   update(scene) {
     t += 0.016;
