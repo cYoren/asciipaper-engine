@@ -10,7 +10,7 @@ uniform vec2 offset;        // move the picture, in screen fractions
 uniform float contrast, brightness, gamma;
 uniform float threshold;    // brightness under which a cell stays empty
 uniform float invert;       // 1 = dark parts get the dense characters
-uniform float colorMode;    // 0 = the picture's own colours, 1 = tint, 2 = gradient from tint to tint2
+uniform float colorMode;    // 0 = the picture's own colours, 1 = tint, 2 = gradient from tint to tint2, 3 = exact (the pixel as it is)
 uniform float vivid;        // 0..1: lift colours towards full brightness
 uniform vec3 tint, tint2;
 uniform float lens;         // magnify around the pointer
@@ -90,6 +90,7 @@ vec4 cell(vec2 uv){
     if(backdrop<=0.0) return vec4(0.0);
     sc=bc*0.85; m=(uv-0.5)*sc+0.5; dim=backdrop;   // a little enlarged: a backdrop, not a copy
   }
+  if(colorMode>2.5) return vec4(texture2D(media,m).rgb*dim,1.0);   // exact: the source pixel itself, before any averaging, inversion or threshold
   // Average the whole character's footprint, so fine detail (halftones, dithering, noise)
   // becomes shading instead of flicker.
   vec2 f=sc/u_grid*0.25;

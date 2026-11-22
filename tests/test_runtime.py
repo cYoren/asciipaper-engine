@@ -72,3 +72,17 @@ class RuntimeCompatibilityTest(unittest.TestCase):
                 for key, value in style.get("effects", {}).items():
                     low, high = catalog["effects"][key]
                     self.assertTrue(low <= value <= high)
+
+    def test_a_page_canvas_is_never_left_to_grow(self):
+        # A canvas the page places itself must be given a CSS size. Without one its layout size is the
+        # bitmap the renderer just set, so every resize measures that bitmap and the grid doubles until
+        # the glyph atlas no longer fits: a black screen where the picture should be.
+        lib = (ROOT / "wallpapers/lib/asciipaper.js").read_text()
+        self.assertIn("pinPageCanvas", lib)                       # the runtime rescues such a canvas
+        self.assertNotIn("Character atlas exceeds", lib)          # and never blanks the picture instead
+        for page in sorted((ROOT / "wallpapers").glob("*.html")):
+            source = page.read_text()
+            if "canvas:" not in source:                           # pages without a canvas get the runtime's own
+                continue
+            with self.subTest(page=page.name):
+                self.assertRegex(source, r"canvas\s*\{[^}]*width:\s*(?:100vw|100%)")

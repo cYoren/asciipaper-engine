@@ -267,7 +267,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
     const interaction = typeof cfg.interaction === 'string' ? {mode: cfg.interaction} : cfg.interaction || {};
     // scenes lean towards the pointer, pictures stay still (bending a face is never a good default)
     gl.uniform1f(cellProg.u('u_interact'), named(interaction.mode ?? (cfg.media ? 'none' : 'repel'), INTERACTIONS));
-    gl.uniform1f(cellProg.u('u_interactStrength'), interaction.strength ?? 1); gl.uniform1f(cellProg.u('u_interactRadius'), interaction.radius ?? .25);
+    gl.uniform1f(cellProg.u('u_interactStrength'), interaction.strength ?? .5); gl.uniform1f(cellProg.u('u_interactRadius'), interaction.radius ?? .12);
     gl.uniform1f(cellProg.u('u_dither'), named(cfg.dither || 0, DITHERS)); gl.uniform1f(cellProg.u('u_paletteSize'), palette.length);
     if (palette.length) gl.uniform3fv(cellProg.u('u_palette'), palette.flat());
     gl.uniform1i(cellProg.u('u_data'), 2); gl.uniform1i(cellProg.u('u_lut'), 3);
@@ -296,13 +296,40 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
       },
     };
 
+    // A canvas with no CSS size takes its layout size from the bitmap, so every resize would measure the
+    // bitmap it just got and the picture would double without end. Only a canvas that has already
+    // outgrown the page is treated that way: a canvas the page did size, even one that fills the page,
+    // is left alone, because its CSS box is a measurement rather than a symptom.
+    let pinned = false;
+    function pinPageCanvas() {
+      if (pinned || !embedded || canvas.clientWidth !== canvas.width || canvas.clientHeight !== canvas.height) return;
+      if (canvas.clientWidth <= innerWidth && canvas.clientHeight <= innerHeight) return;
+      pinned = true;
+      canvas.style.cssText += ';position:fixed;inset:0;width:100vw;height:100vh;display:block';
+    }
+
     function resize() {
-      const W = embedded ? Math.max(1, canvas.clientWidth) : innerWidth, H = embedded ? Math.max(1, canvas.clientHeight) : innerHeight;
+      pinPageCanvas();
+      const measured = embedded && !pinned;
+      const W = measured ? Math.max(1, canvas.clientWidth) : innerWidth, H = measured ? Math.max(1, canvas.clientHeight) : innerHeight;
       const dpr = devicePixelRatio || 1;
-      canvas.width = Math.max(1, Math.round(W * dpr)); canvas.height = Math.max(1, Math.round(H * dpr));
-      const cellW = Math.max(cfg.cell, Math.sqrt(W * H * cfg.aspect / cfg.maxCells));
-      Object.assign(scene, {width: W, height: H, cols: Math.max(1, Math.floor(W / cellW)), rows: Math.max(1, Math.floor(H * cfg.aspect / cellW))});
-      const {cols, rows} = scene;
+      const maxTexture = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+      // Never ask for a bitmap bigger than the device can hold and draw: the atlas and the cell grid
+      // both grow with it. A screen whose device pixels exceed this is rendered at this size and scaled
+      // up by the compositor, which is a sharpness trade rather than a black screen.
+      const cap = Math.min(maxTexture, 8192), k0 = Math.min(1, cap / (W * dpr), cap / (H * dpr));
+      canvas.width = Math.max(1, Math.round(W * dpr * k0)); canvas.height = Math.max(1, Math.round(H * dpr * k0));
+      // One glyph atlas holds every character, and a tile too large for it cannot be drawn at all, so
+      // cells that do not fit are drawn finer until they do: a picture that fits beats a blank one.
+      let cellW = Math.max(cfg.cell, Math.sqrt(W * H * cfg.aspect / cfg.maxCells)), cols = 1, rows = 1, atlasCols = 1, atlasRow = 1, tile = 1;
+      for (let pass = 0; pass < 8; pass++, cellW /= 2) {
+        cols = Math.max(1, Math.floor(W / cellW)); rows = Math.max(1, Math.floor(H * cfg.aspect / cellW));
+        tile = Math.ceil(canvas.width / cols) + PAD * 2;
+        atlasCols = Math.min(chars.length, Math.max(1, Math.floor(maxTexture / tile)));
+        atlasRow = Math.ceil(canvas.height / rows) + PAD * 2;
+        if (atlasRow * Math.ceil(chars.length / atlasCols) <= maxTexture) break;
+      }
+      Object.assign(scene, {width: W, height: H, cols, rows, maxTexture});
       if (!cfg.glsl) {
         scene.data = new Uint8Array(cols * rows * 4);
         gl.activeTexture(gl.TEXTURE2); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, cols, rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -312,12 +339,9 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
       // Glyphs are rasterized at the exact cell size in device pixels, as asciify.org does.
-      const cw = canvas.width / cols, ch = canvas.height / rows, tile = Math.ceil(cw) + PAD * 2;
+      const cw = canvas.width / cols, ch = canvas.height / rows;
       const atlas = document.createElement('canvas'), ax = atlas.getContext('2d');
-      const atlasCols = Math.min(chars.length, Math.max(1, Math.floor(gl.getParameter(gl.MAX_TEXTURE_SIZE) / tile)));
-      const atlasRow = Math.ceil(ch) + PAD * 2;
       atlas.width = tile * atlasCols; atlas.height = atlasRow * Math.ceil(chars.length / atlasCols);
-      if (atlas.height > gl.getParameter(gl.MAX_TEXTURE_SIZE)) throw new Error('Character atlas exceeds the device texture limit');
       const cjk = chars.some(c => /[\u2e80-\u9fff\uff65-\uff9f]/u.test(c));
       ax.font = `${cfg.weight || 400} ${.9 * Math.min(cw / (cjk ? 1 : .55), ch)}px ${cfg.font}`;
       ax.textAlign = 'center'; ax.textBaseline = 'middle'; ax.fillStyle = '#fff';
@@ -386,7 +410,7 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
   // shader inlined). The media, if any, is the page's #asciipaper-media <img> or <video>; each
   // frame is drawn small and handed to the shader as `media`, like asciipaper-engine does.
   const color = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? [1, 3, 5].map(i => parseInt(v.slice(i, i + 2), 16) / 255) : v;
-  const LOOK = ['charset', 'cell', 'aspect', 'maxCells', 'background', 'font', 'time', 'period', 'fill', 'weight', 'shape', 'dither', 'palette', 'effects', 'interaction', 'pace'];
+  const LOOK = ['charset', 'cell', 'aspect', 'maxCells', 'background', 'font', 'time', 'period', 'fill', 'weight', 'shape', 'dither', 'palette', 'effects', 'interaction', 'pace', 'frameWidth'];
   let live = null;   // the running spec: {uniforms, look} for patch()
 
   function spec(s) {
@@ -409,7 +433,10 @@ gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);}`;
           return;
         }
         if (!frame) {
-          const k = Math.min(1, 256 / Math.max(w0, h0)), w = Math.max(1, Math.round(w0 * k)), h = Math.max(1, Math.round(h0 * k));   // 256 px on the longer side
+          // One budget for the longer side, so a portrait source cannot slip past it: 256 px, or the
+          // width a 1:1 port asks for, and never more than the device can hold as a texture.
+          const cap = Math.min(scene.maxTexture || 4096, s.frameWidth ? Math.min(2048, s.frameWidth) : 256);
+          const k = Math.min(1, cap / Math.max(w0, h0)), w = Math.max(1, Math.round(w0 * k)), h = Math.max(1, Math.round(h0 * k));
           frame = Object.assign(document.createElement('canvas'), {width: w, height: h}).getContext('2d', {willReadFrequently: true});
         }
         const {width, height} = frame.canvas;
