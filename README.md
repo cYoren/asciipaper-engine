@@ -29,6 +29,7 @@ screen of characters costs about as much as one full-screen quad.
 | video or GIF | `--record 30 --warmup 2 \| ffmpeg -f rawvideo -pix_fmt bgra -s 1920x1080 -r 30 -i - out.mp4` |
 | background inside a web page | a `<canvas>` plus `asciipaper.ascii({canvas, glsl})` (see `wallpapers/embed.html`) |
 | a picture, GIF or video as characters | `python3 tools/import_media.py photo.jpg -o out/` → a spec, its media and its frames |
+| a still PNG as it is, no cache | point `"media"` at the `.png`: the engine reads it with cairo and plays one frame, pixel for pixel (an atlas that is read one texel a cell must not be resampled) |
 | big text: a word, a name, a few lines | `python3 tools/text_wallpaper.py "ASCII PAPER" -o out/` |
 | a shareable wallpaper file | the same JSON spec, on any platform |
 
@@ -57,7 +58,31 @@ Rules that keep renders honest:
 - **Deterministic frames.** `--seconds N` simulates exactly N seconds of the scene, so the
   same spec always gives the same frame. `--pointer X,Y` simulates the pointer.
 - **No hidden state.** The spec declares everything: glyphs, cell size, colours, dither,
-  palette, effects, interaction. `wallpapers/lib/looks.json` lists every name you may use.
+  palette, effects, interaction. `wallpapers/lib/looks.json` lists every name you may use,
+  including the character ramps: `charset=moons`, `sparks`, `stars`, `leaves`, `water`, `eyes`,
+  `grid`, `blocks`, `braille`, `kanji`… A ramp is read by position, so swapping one restyles a
+  picture without changing it.
+
+### Shaders that use the level as a glyph index
+
+The renderer picks a character from the charset by `level`, and it multiplies that level by
+`1 + u_audio/2` and scales the picture by `1/(1 + u_audio/8)` for sound. A shader that paints its
+own characters per cell (a ported piece, a text mosaic) must undo both, or the art scrambles the
+moment the music plays:
+
+```glsl
+vec4 cell(vec2 uv){
+  uv = (uv - 0.5)*(1.0 + u_audio*0.08) + 0.5;        // the engine's sound zoom, undone
+  // ... pick the glyph index i of n for this cell, and its ink colour ...
+  float level = (i/(n - 1.0))/(1.0 + 0.5*u_audio);    // the engine's sound boost, undone
+  return vec4(ink, level);
+}
+```
+
+With that, sound can be spent where it reads: on the colour (`ink * (1.0 + u_audio)`), on the pace
+of the animation, on a glow. The pointer needs no such care: `u_pointer`, `u_clicks`, `u_strength`
+and `u_idle` are yours to use on `uv`, because a bent picture is still the same glyphs. That is
+how `asciimagic.glsl` in ASCII Paper leans, magnifies and ripples a ported piece.
 - **Two renderers, one language.** The C engine and the WebGL runtime run the same shaders
   and specs, so a wallpaper previewed in a browser is pixel-compatible on a desktop.
 
