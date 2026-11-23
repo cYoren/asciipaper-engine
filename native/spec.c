@@ -105,7 +105,9 @@ static int map_frames(struct spec *s, const char *path) {
     if (m == MAP_FAILED) return 0;
     uint32_t h[4];
     memcpy(h, m + 4, sizeof h);
-    if (memcmp(m, "APF1", 4) || !h[0] || !h[1] || !h[2] || 20 + (size_t)h[0] * h[1] * 3 * h[2] > (size_t)st.st_size) {
+    // Divide rather than multiply the file size: a crafted header must not wrap the arithmetic.
+    size_t frame_bytes = (size_t)h[0] * h[1] * 3;
+    if (memcmp(m, "APF1", 4) || !h[0] || !h[1] || !h[2] || !frame_bytes || (size_t)(st.st_size - 20) / frame_bytes < h[2]) {
         fprintf(stderr, "asciipaper-engine: %s is not an asciipaper frames file\n", path);
         munmap((void *)m, st.st_size);
         return 0;
@@ -131,11 +133,15 @@ static int load_still(struct spec *s, const char *path) {
     unsigned char *data = cairo_image_surface_get_data(surface);
     int stride = cairo_image_surface_get_stride(surface);
     uint8_t *rgb = w > 0 && h > 0 ? malloc((size_t)w * h * 3) : NULL;
-    if (!rgb) { cairo_surface_destroy(surface); return 0; }
+    if (!rgb) {
+        fprintf(stderr, "asciipaper-engine: %s is %dx%d, which is not a picture the engine can use\n", path, w, h);
+        cairo_surface_destroy(surface);
+        return 0;
+    }
     for (int y = 0; y < h; y++) {
         const uint32_t *row = (const uint32_t *)(data + (size_t)y * stride);
         for (int x = 0; x < w; x++) {
-            uint32_t p = row[x], a = p >> 24;   // little-endian ARGB, premultiplied
+            uint32_t p = row[x], a = p >> 24;   // cairo's ARGB32 is a native 32-bit word, so this is endian-safe
             uint8_t *out = rgb + ((size_t)y * w + x) * 3;
             for (int k = 0; k < 3; k++) {
                 uint32_t v = (p >> (16 - k * 8)) & 255;
@@ -265,4 +271,17 @@ const struct preset *spec_load(const char *path, const char *lib, char *shader_f
 }
 
 // ponytail: the previous spec is kept (not freed) after a reload; a few KB per edit.
-void spec_use(const struct preset *preset) { current = (struct spec *)preset; }
+void spec_use(const struct preset *preset) {
+    // Every edit reloads the spec. The buffers belong to the spec that stopped being current, and
+    // nothing else reads them once the switch has happened (spec_update copies them into a texture).
+    static struct spec *previous;
+    if (previous && previous != (struct spec *)preset) {
+        if (previous->still) free(previous->still);
+        if (previous->mapped) munmap((void *)(previous->frames - 20), previous->mapped);
+        previous->still = NULL;
+        previous->mapped = 0;
+        free(previous);
+    }
+    previous = (struct spec *)preset;
+    current = (struct spec *)preset;
+}

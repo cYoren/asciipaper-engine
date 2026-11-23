@@ -37,12 +37,22 @@ vec4 cell(vec2 uv){
 """
 
 
-def png(width, height, rgb):
-    """An 8-bit RGB PNG, no interlace: the same bytes the engine's cairo path reads."""
-    raw = b"".join(b"\x00" + rgb[y * width * 3:(y + 1) * width * 3] for y in range(height))
+def png(width, height, rgb, alpha=None):
+    """An 8-bit PNG, no interlace: RGB (colour type 2), or RGBA (type 6) when alpha bytes are given."""
+    if alpha is None:
+        depth, pixels = 3, rgb
+    else:
+        depth, joined = 4, bytearray()
+        for i in range(0, len(rgb), 3):
+            joined += rgb[i:i + 3] + alpha[i // 3:i // 3 + 1]
+        pixels = bytes(joined)
+    stride = width * depth
+    raw = b"".join(b"\x00" + pixels[y * stride:(y + 1) * stride] for y in range(height))
+
     def chunk(tag, body):
         return struct.pack(">I", len(body)) + tag + body + struct.pack(">I", zlib.crc32(tag + body) & 0xFFFFFFFF)
-    head = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+
+    head = struct.pack(">IIBBBBB", width, height, 8, 2 if alpha is None else 6, 0, 0, 0)
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", head) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
 
 
@@ -86,6 +96,40 @@ class StillSpecTest(unittest.TestCase):
         (self.dir / "still.png.frames").write_bytes(self.cache)
         cached = self.render("cache.png")
         self.assertEqual(rendered, cached, "the PNG path and the frame cache must render the same frame")
+
+    def test_a_translucent_png_is_un_premultiplied(self):
+        # cairo hands back premultiplied ARGB; half-covering pixels are where that conversion can be
+        # wrong without anything looking broken.
+        width, height = 8, 4
+        rgb_, alpha = bytearray(), bytearray()
+        for y in range(height):
+            for x in range(width):
+                rgb_ += bytes((200, 60, 20))
+                alpha.append(200)
+        (self.dir / "still.png").write_bytes(png(width, height, bytes(rgb_), bytes(alpha)))
+        spec = json.loads((self.dir / "still.json").read_text())
+        spec["charset"] = " █"
+        (self.dir / "still.json").write_text(json.dumps(spec))
+        rendered = self.render("alpha.png")
+        self.assertTrue(rendered, "no snapshot")
+        cached = self.render_with_cache(width, height, bytes(rgb_), bytes(alpha))
+        self.assertTrue(cached, "no cache snapshot")
+        # Straight RGB comes back from premultiplied ARGB to within a unit a channel, and the encoder
+        # is not the thing under test: compare the fraction of bytes that moved.
+        differing = sum(1 for a, b in zip(rendered, cached) if a != b) / max(len(rendered), 1)
+        self.assertLess(differing, 0.02, f"{differing:.1%} of bytes differ: the premultiplied alpha maths is off")
+
+    def test_a_corrupt_cache_falls_back_to_the_png(self):
+        (self.dir / "still.png").write_bytes(self.image)
+        (self.dir / "still.png.frames").write_bytes(b"APF1" + b"\x01\x02")   # too short to be a cache
+        rendered = self.render("corrupt.png")
+        self.assertTrue(rendered)
+        self.assertEqual(rendered, self.render("plain.png"))
+
+    def render_with_cache(self, width, height, rgb_, alpha=None):
+        (self.dir / "still.png").write_bytes(png(width, height, rgb_, alpha))
+        (self.dir / "still.png.frames").write_bytes(frames(width, height, rgb_))
+        return self.render("cached-alpha.png")
 
     def test_a_media_file_it_cannot_read_says_so(self):
         (self.dir / "still.png").write_bytes(b"not a picture")
