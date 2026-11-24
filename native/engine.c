@@ -345,6 +345,14 @@ void scene_uniform(struct scene *s, const char *name, int n, const float *v) {
 }
 
 void scene_texture(struct scene *s, const char *name, int w, int h, int channels, const uint8_t *pixels) {
+    static int max_side;
+    if (!max_side) glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_side);
+    if (w > max_side || h > max_side) {   // glTexImage2D would fail and this texture would sample black
+        static int told;
+        if (!told++) fprintf(stderr, "asciipaper-engine: %s is %dx%d, over this GPU's %d px texture limit; "
+                                     "the picture is not drawn — resample it to fit\n", name, w, h, max_side);
+        return;
+    }
     GLenum format = channels == 3 ? GL_RGB : GL_RGBA;
     struct output *o = s->output;
     int i = 0;

@@ -3,6 +3,7 @@
 //
 //   {"shader": "media" | "art.glsl" | "vec4 cell(vec2 uv){...}",
 //    "media": "the-chosen.mp4",          // played from "the-chosen.mp4.frames", made by asciipaper
+//                                        // (or a .png, read as one still, no cache needed)
 //    "charset": " .:-=+*#%@", "cell": 8, "aspect": 0.55, "maxCells": 40000,
 //    "background": "#000000", "font": "JetBrains Mono, monospace", "fill": 0.15, "weight": 700,
 //    "uniforms": {"contrast": 1.3, "tint": "#ff3355", "offset": [0, 0.1]}}
@@ -18,6 +19,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <cairo.h>
 #include "engine.h"
 #include "json.h"
 #include "spec.h"
@@ -28,7 +30,8 @@ struct spec {
     struct preset preset;
     struct { char name[64]; int n; float v[4]; } uniforms[MAX_UNIFORMS];
     int nuniforms;
-    const uint8_t *frames;   // after the 20-byte header
+    const uint8_t *frames;   // after the 20-byte header, or a still decoded below
+    uint8_t *still;          // a PNG read here, owned by this spec
     size_t mapped;
     int fw, fh, fcount;
     float fps;
@@ -90,26 +93,66 @@ static float uniform(const struct spec *s, const char *name, float fallback) {
 }
 
 // frames file: "APF1", then little-endian u32 width, height, count, fps x 1000; then RGB frames.
-static void map_frames(struct spec *s, const char *path) {
+static int map_frames(struct spec *s, const char *path) {
     int fd = open(path, O_RDONLY | O_CLOEXEC);
     struct stat st;
     if (fd < 0 || fstat(fd, &st) < 0 || st.st_size < 20) {
-        fprintf(stderr, "asciipaper-engine: no frames at %s; run: python3 tools/import_media.py <media>\n", path);
         if (fd >= 0) close(fd);
-        return;
+        return 0;
     }
     const uint8_t *m = mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0);
     close(fd);
-    if (m == MAP_FAILED) return;
+    if (m == MAP_FAILED) return 0;
     uint32_t h[4];
     memcpy(h, m + 4, sizeof h);
-    if (memcmp(m, "APF1", 4) || !h[0] || !h[1] || !h[2] || 20 + (size_t)h[0] * h[1] * 3 * h[2] > (size_t)st.st_size) {
+    // Divide rather than multiply the file size: a crafted header must not wrap the arithmetic.
+    size_t frame_bytes = (size_t)h[0] * h[1] * 3;
+    if (memcmp(m, "APF1", 4) || !h[0] || !h[1] || !h[2] || !frame_bytes || (size_t)(st.st_size - 20) / frame_bytes < h[2]) {
         fprintf(stderr, "asciipaper-engine: %s is not an asciipaper frames file\n", path);
         munmap((void *)m, st.st_size);
-        return;
+        return 0;
     }
     s->frames = m + 20; s->mapped = st.st_size;
     s->fw = h[0]; s->fh = h[1]; s->fcount = h[2]; s->fps = h[3] / 1000.f;
+    return 1;
+}
+
+// A still picture needs no frame cache: cairo reads PNG, and a spec that points at one plays as a
+// single frame. Atlases (asciimagic) depend on this: they are read one texel a cell, so nothing may
+// resample them, and a 3-bytes-a-pixel cache of a 1728x1512 atlas is 7.8 MB of disk nobody needs.
+static int load_still(struct spec *s, const char *path) {
+    cairo_surface_t *surface = cairo_image_surface_create_from_png(path);
+    if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(surface);
+        fprintf(stderr, "asciipaper-engine: no frames for %s and cairo cannot read it as a PNG; "
+                        "run python3 tools/import_media.py <media>\n", path);
+        return 0;
+    }
+    cairo_surface_flush(surface);
+    int w = cairo_image_surface_get_width(surface), h = cairo_image_surface_get_height(surface);
+    unsigned char *data = cairo_image_surface_get_data(surface);
+    int stride = cairo_image_surface_get_stride(surface);
+    uint8_t *rgb = w > 0 && h > 0 ? malloc((size_t)w * h * 3) : NULL;
+    if (!rgb) {
+        fprintf(stderr, "asciipaper-engine: %s is %dx%d, which is not a picture the engine can use\n", path, w, h);
+        cairo_surface_destroy(surface);
+        return 0;
+    }
+    for (int y = 0; y < h; y++) {
+        const uint32_t *row = (const uint32_t *)(data + (size_t)y * stride);
+        for (int x = 0; x < w; x++) {
+            uint32_t p = row[x], a = p >> 24;   // cairo's ARGB32 is a native 32-bit word, so this is endian-safe
+            uint8_t *out = rgb + ((size_t)y * w + x) * 3;
+            for (int k = 0; k < 3; k++) {
+                uint32_t v = (p >> (16 - k * 8)) & 255;
+                out[k] = a == 0 || a == 255 ? v : (uint8_t)fmin(255, (v * 255 + a / 2) / a);
+            }
+        }
+    }
+    cairo_surface_destroy(surface);
+    s->frames = rgb; s->still = rgb;
+    s->fw = w; s->fh = h; s->fcount = 1; s->fps = 1;
+    return 1;
 }
 
 static void spec_update(struct scene *scene, float dt) {
@@ -217,13 +260,28 @@ const struct preset *spec_load(const char *path, const char *lib, char *shader_f
     }
     if (!*s->preset.charset) { free((char *)s->preset.charset); s->preset.charset = strdup(" @"); }
     if (media) {
-        if (media[0] == '/') snprintf(file, sizeof file, "%s.frames", media);
-        else snprintf(file, sizeof file, "%s/%s.frames", dir, media);
-        map_frames(s, file);
+        char media_path[4080];
+        if (media[0] == '/') snprintf(media_path, sizeof media_path, "%s", media);
+        else snprintf(media_path, sizeof media_path, "%s/%s", dir, media);
+        snprintf(file, sizeof file, "%s.frames", media_path);
+        if (!map_frames(s, file)) load_still(s, media_path);   // a PNG plays as it is
     }
     json_free(j); free(copy);
     return &s->preset;
 }
 
 // ponytail: the previous spec is kept (not freed) after a reload; a few KB per edit.
-void spec_use(const struct preset *preset) { current = (struct spec *)preset; }
+void spec_use(const struct preset *preset) {
+    // Every edit reloads the spec. The buffers belong to the spec that stopped being current, and
+    // nothing else reads them once the switch has happened (spec_update copies them into a texture).
+    static struct spec *previous;
+    if (previous && previous != (struct spec *)preset) {
+        if (previous->still) free(previous->still);
+        if (previous->mapped) munmap((void *)(previous->frames - 20), previous->mapped);
+        previous->still = NULL;
+        previous->mapped = 0;
+        free(previous);
+    }
+    previous = (struct spec *)preset;
+    current = (struct spec *)preset;
+}

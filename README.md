@@ -29,6 +29,7 @@ screen of characters costs about as much as one full-screen quad.
 | video or GIF | `--record 30 --warmup 2 \| ffmpeg -f rawvideo -pix_fmt bgra -s 1920x1080 -r 30 -i - out.mp4` |
 | background inside a web page | a `<canvas>` plus `asciipaper.ascii({canvas, glsl})` (see `wallpapers/embed.html`) |
 | a picture, GIF or video as characters | `python3 tools/import_media.py photo.jpg -o out/` → a spec, its media and its frames |
+| a still PNG as it is, no cache | point `"media"` at the `.png`: the engine reads it with cairo and plays one frame (an atlas read one texel a cell must not be resampled). Opaque pixels come back exact; a translucent PNG is premultiplied by cairo and re-quantised to within a unit per channel |
 | big text: a word, a name, a few lines | `python3 tools/text_wallpaper.py "ASCII PAPER" -o out/` |
 | a shareable wallpaper file | the same JSON spec, on any platform |
 
@@ -57,7 +58,43 @@ Rules that keep renders honest:
 - **Deterministic frames.** `--seconds N` simulates exactly N seconds of the scene, so the
   same spec always gives the same frame. `--pointer X,Y` simulates the pointer.
 - **No hidden state.** The spec declares everything: glyphs, cell size, colours, dither,
-  palette, effects, interaction. `wallpapers/lib/looks.json` lists every name you may use.
+  palette, effects, interaction. `wallpapers/lib/looks.json` lists every name you may use,
+  including the character ramps: `sparks`, `stars`, `leaves`, `water`, `eyes`, `grid`, `blocks`,
+  `braille`, `kanji`… A ramp is read by position, so swapping one restyles a picture without
+  changing it, and its glyphs must go from least to most ink. Note where the names work: the
+  `asciipaper` tools resolve them (`asciipaper look NAME charset=moons`), while a spec holds the
+  characters themselves — `"charset": "moons"` would draw the letters of the word.
+
+### Shaders that use the level as a glyph index
+
+The renderer picks a character from the charset by `level`, and it multiplies that level by
+`1 + u_audio/2` and scales the picture by `1/(1 + u_audio/8)` for sound. A shader that paints its
+own characters per cell (a ported piece, a text mosaic) must undo both, or the art scrambles the
+moment the music plays:
+
+```glsl
+vec4 cell(vec2 uv){
+  // Nothing moves the picture with sound, and the level stays the glyph we chose.
+  uv = (uv - 0.5)*(1.0 + u_audio*0.08) + 0.5;               // undoes the engine's sound zoom
+  // ... pick the glyph index i of n for this cell, and its ink colour ...
+  float level = (i/max(n - 1.0, 1.0))/(1.0 + 0.5*u_audio);  // undoes the engine's sound boost on the level
+  ink /= (1.0 + 0.5*u_audio);                               // and on the colour: the engine multiplies both
+  return vec4(ink, level);
+}
+```
+
+Three details that bite:
+
+- The engine also applies `+ u_tilt*0.06` and a `clamp` to the uv it hands you, after the zoom. Tilt
+  moves the picture like the zoom does; undo it the same way, from `uv - u_tilt*0.06`, and accept that
+  a cell at the very edge was clamped before you saw it.
+- Once the level is a glyph index, `interaction: "glow"` is not safe — it adds to the level. Use a
+  uv-only interaction (`magnify`, `repel`, `attract`, `swirl`, `ripple`) or `none`, and bend `uv`
+  yourself.
+- With those undone, sound can be spent where it reads: on the colour (`ink * (1.0 + u_audio)`, after
+  dividing out the engine's factor, or you brighten twice), on the pace of the animation, on a glow.
+  That is what `asciimagic.glsl` in ASCII Paper does for a ported piece, and its pointer work (lean,
+  magnify, ring on click) is plain uv, which needs none of this.
 - **Two renderers, one language.** The C engine and the WebGL runtime run the same shaders
   and specs, so a wallpaper previewed in a browser is pixel-compatible on a desktop.
 
