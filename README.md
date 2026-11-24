@@ -20,6 +20,8 @@ screen of characters costs about as much as one full-screen quad.
 **[ASCII Paper](https://cyoren.github.io/asciipaper/)** is the app built on this engine
 (Studio, Discover packs, community, Windows / Linux / macOS / Android apps).
 
+[![cYoren/asciipaper-engine MCP server](https://glama.ai/mcp/servers/cYoren/asciipaper-engine/badges/score.svg)](https://glama.ai/mcp/servers/cYoren/asciipaper-engine)
+
 ## What you can make with it
 
 | Result | How |
