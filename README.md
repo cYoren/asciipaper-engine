@@ -239,6 +239,8 @@ running scene), `set(options)` (fps, idleFps, quality, speed, pointer, paused), 
 
 ## Credits
 
-MIT, see `LICENSE`. The `fluid` scene is a 1:1 port of [asciify](https://asciify.org)
+MIT, see `LICENSE`. The name, the logo and the store listings are not part of the grant, so a
+fork ships under its own name. Contributions are covered by
+[CONTRIBUTING.md](CONTRIBUTING.md). The `fluid` scene is a 1:1 port of [asciify](https://asciify.org)
 (MIT, `licenses/asciify-engine-MIT.txt`). The look tables were inspired by ASCII Magic;
 every shader and line of code here is written for this engine.
